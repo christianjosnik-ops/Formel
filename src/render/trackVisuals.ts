@@ -319,6 +319,34 @@ function addGrandstand(scene: THREE.Scene, t: Track, s0: number, s1: number, sid
   scene.add(posts);
 }
 
+function addMarshalPosts(scene: THREE.Scene, t: Track): void {
+  const spacing = 210;
+  const n = Math.floor(t.length / spacing);
+  const post = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 2.6, 0.18), new THREE.MeshStandardMaterial({ color: 0xd9d9dc, roughness: 0.6 }), n);
+  const box = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 1.3, 1.1), new THREE.MeshStandardMaterial({ color: 0xff7a00, roughness: 0.6 }), n);
+  const light = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd23a }), n);
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const sc = new THREE.Vector3(1, 1, 1);
+  for (let k = 0; k < n; k++) {
+    const i = Math.round((k * spacing) / t.ds) % t.n;
+    const side = k % 2 === 0 ? 1 : -1;
+    const o = (side === 1 ? t.wl[i] + t.barrierL[i] : t.wr[i] + t.barrierR[i]) + 2.6;
+    const x = t.x[i] + t.nx(i) * side * o;
+    const y = t.y[i] + t.ny(i) * side * o;
+    e.set(0, t.hdg[i], 0);
+    q.setFromEuler(e);
+    m4.compose(new THREE.Vector3(x, 1.3, -y), q, sc);
+    post.setMatrixAt(k, m4);
+    m4.compose(new THREE.Vector3(x, 1.0, -y), q, sc);
+    box.setMatrixAt(k, m4);
+    m4.compose(new THREE.Vector3(x, 2.85, -y), q, sc);
+    light.setMatrixAt(k, m4);
+  }
+  scene.add(post, box, light);
+}
+
 function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1): void {
   const facade = facadeTexture();
   const fm = new THREE.MeshStandardMaterial({ map: facade, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide });
@@ -644,6 +672,30 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   addGrandstand(scene, t, 40, 260, -1);
   addGrandstand(scene, t, 20, 200, 1);
   addPitBuilding(scene, t, -300, -40, 1);
+  // Kurventribünen außen an den engsten Kurven, Streckenposten und Flutlichtmasten
+  const stands: Array<{ s0: number; s1: number; side: 1 | -1 }> = [
+    { s0: -330, s1: -60, side: -1 },
+    { s0: 40, s1: 260, side: -1 },
+    { s0: 20, s1: 200, side: 1 },
+    { s0: -300, s1: -40, side: 1 },
+  ];
+  {
+    const cand: Array<{ i: number; sev: number }> = [];
+    for (let i = 0; i < t.n; i++) if (t.sev[i] > 0.45 && Math.abs(t.curv[i]) > 0.004) cand.push({ i, sev: t.sev[i] });
+    cand.sort((a, b) => b.sev - a.sev);
+    const used: number[] = [];
+    for (const c of cand) {
+      const sc = t.s[c.i];
+      if (sc < 420 || sc > t.length - 420) continue;
+      if (used.some((u) => Math.min(Math.abs(u - sc), t.length - Math.abs(u - sc)) < 550)) continue;
+      used.push(sc);
+      const side: 1 | -1 = t.curv[c.i] > 0 ? -1 : 1;
+      addGrandstand(scene, t, sc - 70, sc + 70, side);
+      stands.push({ s0: sc - 70, s1: sc + 70, side });
+      if (used.length >= 5) break;
+    }
+    addMarshalPosts(scene, t);
+  }
 
   // ---- Wald ----
   const treeMeshes: Array<{ im: THREE.InstancedMesh; total: number }> = [];
@@ -713,6 +765,9 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
           const lat = t.lateral(i, x, y);
           const edge = lat >= 0 ? t.wl[i] + t.barrierL[i] : t.wr[i] + t.barrierR[i];
           if (Math.abs(lat) < edge + 4.5) continue;
+          const sd = lat >= 0 ? 1 : -1;
+          const sv = t.s[i];
+          if (Math.abs(lat) < edge + 48 && stands.some((z) => z.side === sd && sv > z.s0 - 12 && sv < z.s1 + 12)) continue;
         } else if (d < 40) continue;
         // Wald in Flecken, Lichtungen, nach außen lichter
         const patch = smooth(0.3, 0.55, fbm(x / 240, y / 240, seed + 1));

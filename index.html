@@ -16,6 +16,7 @@
 <body>
   <canvas id="view"></canvas>
 
+  <div id="speedfx"></div>
   <div id="loading"><div class="spin"></div><div>Physik startet …</div></div>
 
   <!-- HUD -->
@@ -151,7 +152,7 @@
       <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
 
       <h3>Anzeige</h3>
-      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="cockpit">Cockpit</option><option value="tv">TV</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
+      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="tcam">T-Cam (Airbox)</option><option value="cockpit">Cockpit</option><option value="nose">Frontflügel</option><option value="tv">TV-Regie</option><option value="side">Streckenrand tief</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
       <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
       <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
       <p class="muted" id="buildInfo"></p>

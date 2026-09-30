@@ -6,7 +6,7 @@ export interface Settings {
   steerAssist: number;
   team: string;
   compound: 'soft' | 'medium' | 'hard' | 'inter' | 'wet';
-  camera: 'chase' | 'cockpit' | 'tv' | 'heli' | 'showroom';
+  camera: 'chase' | 'tcam' | 'cockpit' | 'nose' | 'tv' | 'side' | 'heli' | 'showroom';
   telemetry: boolean;
   brakeBias: number;
   /** Neigung: voller Lenkeinschlag bei diesem Winkel [Grad]. */

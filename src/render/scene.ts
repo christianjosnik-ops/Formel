@@ -39,19 +39,32 @@ function skyTexture(): THREE.CanvasTexture {
   sun.addColorStop(1, 'rgba(255,240,210,0)');
   g.fillStyle = sun;
   g.fillRect(0, 0, W, H);
-  // Wolken
-  g.fillStyle = 'rgba(255,255,255,0.55)';
+  // Wolken: weiche Cumulus-Haufen aus vielen Radialverläufen, unten flach und leicht grau
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 90; i++) {
-    const x = rnd() * W;
-    const y = H * (0.08 + rnd() * 0.3);
-    const rw = 25 + rnd() * 70;
-    const rh = 6 + rnd() * 14;
-    g.globalAlpha = 0.12 + rnd() * 0.22;
-    g.beginPath();
-    g.ellipse(x, y, rw, rh, 0, 0, Math.PI * 2);
-    g.fill();
+  for (let cl = 0; cl < 26; cl++) {
+    const cx = rnd() * W;
+    const cy = H * (0.1 + rnd() * 0.26);
+    const size = 0.6 + rnd() * 1.1;
+    for (let k = 0; k < 14; k++) {
+      const x = cx + (rnd() - 0.5) * 120 * size;
+      const y = cy + (rnd() - 0.65) * 26 * size;
+      const rad = (16 + rnd() * 34) * size;
+      const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+      const shade = 232 + Math.round((y - cy) * -0.4);
+      grd.addColorStop(0, `rgba(255,255,255,${0.42 + rnd() * 0.2})`);
+      grd.addColorStop(0.6, `rgba(${shade},${shade},${shade + 6},0.2)`);
+      grd.addColorStop(1, 'rgba(240,244,250,0)');
+      g.fillStyle = grd;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    // graue Unterseite
+    const by = cy + 10 * size;
+    const bg = g.createLinearGradient(0, by - 6, 0, by + 6);
+    bg.addColorStop(0, 'rgba(150,160,175,0)');
+    bg.addColorStop(1, 'rgba(150,160,175,0.18)');
+    g.fillStyle = bg;
+    g.fillRect(cx - 70 * size, by - 6, 140 * size, 12);
   }
   g.globalAlpha = 1;
   const t = new THREE.CanvasTexture(c);

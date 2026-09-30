@@ -257,6 +257,7 @@ applyQuality();
 
 // ---------------------------------------------------------------- Hauptschleife
 const input = newInput();
+const speedFx = document.getElementById('speedfx')!;
 let last = performance.now();
 let fpsAcc = 0;
 let fpsFrames = 0;
@@ -308,6 +309,7 @@ function frame(now: number): void {
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
     hud.update(s, dt, settings.tc, settings.abs);
+    speedFx.style.opacity = String(Math.min(0.85, Math.max(0, (s[S.speedKmh] - 120) / 260)));
     lapTimer.update(s);
     if (!loaded) {
       loaded = true;

@@ -219,3 +219,6 @@ body.showroom #race { display: none; }
   body.race.arrows #aeroBtn { bottom: calc(32vh + 22px + var(--safe-b)); width: 52px; height: 52px; }
   body.race #topbtns button { padding: 3px 8px; font-size: 15px; }
 }
+
+#speedfx { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(0,0,0,.55) 100%); }
+body.showroom #speedfx { display: none; }
