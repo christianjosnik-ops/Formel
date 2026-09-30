@@ -274,6 +274,12 @@ function frame(now: number): void {
 
   controls.update(dt);
   controls.fill(input);
+  {
+    // Aero-Automatik (wie die KI): X-Modus auf der Geraden, Z in Kurven und beim Bremsen; Knopf erzwingt X
+    const sn = physics.out;
+    const straight = input.throttle > 0.9 && input.brake < 0.05 && Math.abs(input.steer) < 0.12 && sn[S.speedKmh] > 180;
+    if (!controls.aeroMode && settings.autoAero && straight) input.aeroX = 1;
+  }
   physics.setInput(input);
 
   if (physics.sample()) {

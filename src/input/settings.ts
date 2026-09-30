@@ -21,6 +21,7 @@ export interface Settings {
   /** Index in der Fahrerliste (race/field DRIVERS). */
   driver: number;
   field: number;
+  autoAero: boolean;
 }
 
 const KEY = 'formel.settings.v2';
@@ -45,6 +46,7 @@ export const DEFAULTS: Settings = {
   grid: 'mid',
   driver: 0,
   field: 22,
+  autoAero: true,
 };
 
 export function loadSettings(): Settings {

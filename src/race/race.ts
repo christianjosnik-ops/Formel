@@ -279,6 +279,7 @@ export class RaceDirector {
     const ents = this.entrants;
     const L = t.length;
     const now = this.time;
+    const cfgAuto = !!this.cfg.autopilot;
 
     for (const e of ents) {
       const v = this.world.vehicles[e.vi];
@@ -361,6 +362,7 @@ export class RaceDirector {
     this.slipstream(ranked);
 
     // KI-Steuerung: in der Startphase vorsichtiger (Pulk, enge erste Kurve)
+    const player = ents.find((x) => x.isPlayer && !cfgAuto);
     const startEase = Math.min(1, 0.84 + 0.16 * (now / 45));
     for (const e of ents) {
       if (e.out || !e.ai) continue;
@@ -374,7 +376,17 @@ export class RaceDirector {
       e.ai.laneBias = e.gridLat * Math.max(0, 1 - Math.max(0, e.dist) / 550) - this.line.offset[e.idx] * Math.max(0, 1 - Math.max(0, e.dist) / 550);
       const { ahead, beside } = this.neighbours(e, ents);
       const mode: AIMode = e.finished ? 'cooldown' : 'race';
-      e.ai.update(dt, v, mode, ahead, beside, startEase);
+      // Gummiband: Feld bleibt beim Spieler (enges Rad-an-Rad-Rennen); zu weit Zurückliegende holen etwas auf,
+      // zu weit Enteilte drosseln. Nur wenige Prozent Tempo, die Physik bleibt unverändert.
+      let rubber = 1;
+      if (!e.isPlayer && player && !player.out) {
+        const L2 = t.length;
+        let d = e.dist - player.dist;
+        d = ((((d + L2 / 2) % L2) + L2) % L2) - L2 / 2;
+        if (d < -40) rubber = 1 + Math.min(0.07, ((-d - 40) / 500) * 0.07);
+        else if (d > 60) rubber = 1 - Math.min(0.1, ((d - 60) / 400) * 0.1);
+      }
+      e.ai.update(dt, v, mode, ahead, beside, startEase * rubber);
       // Streckenposten: festgefahrene KI zurück auf die Linie
       if (e.ai.stuckTime > 7 && !v.retired) {
         const i = (e.idx + 6) % t.n;
