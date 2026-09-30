@@ -129,7 +129,12 @@ export class World {
   /** Setzt ein Fahrzeug an eine Position zurück (Streckenposten), Schäden bleiben bestehen. */
   teleport(index: number, x: number, y: number, psi: number): void {
     const cs = this.crash[index];
-    this.vehicles[index].reset(x, y, psi, 0);
+    const tv = this.vehicles[index];
+    const w = Float64Array.from(tv.tyreWear);
+    const tt = Float64Array.from(tv.tyreTemp);
+    tv.reset(x, y, psi, 0);
+    tv.tyreWear.set(w);
+    tv.tyreTemp.set(tt);
     this.inContact[index] = false;
     cs.gNow = 0;
     this.applyEffects(index);

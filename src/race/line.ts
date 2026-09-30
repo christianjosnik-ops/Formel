@@ -14,7 +14,7 @@ const G = 9.80665;
 /** Maximale Querbeschleunigung [m/s^2] in Abhängigkeit der Geschwindigkeit (Abtrieb). */
 export function lateralLimit(v: number): number {
   const a = 1.85 + 2.0 * (1 - Math.exp(-((v / 48) ** 2)));
-  return a * G * 0.96;
+  return a * G * 0.93;
 }
 
 /** Maximale Bremsverzögerung [m/s^2]. */

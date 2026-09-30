@@ -4,6 +4,7 @@ import { AeroModel } from './aero';
 import { Powertrain } from './powertrain';
 import { S } from './layout';
 import { TireModel } from './tire';
+import { COMPOUNDS, COMPOUND_ORDER, TYRE, gripFromTemp, gripFromWear, type CompoundId } from '../config/tyres';
 
 const RAD_TO_RPM = 60 / (2 * Math.PI);
 
@@ -70,6 +71,15 @@ export class Vehicle {
   readonly alpha = new Float64Array(4);
   readonly susp = new Float64Array(4);
   readonly gripScale = new Float64Array([1, 1, 1, 1]);
+  /** Reifenzustand je Rad. */
+  readonly tyreTemp = new Float64Array([TYRE.startTemp, TYRE.startTemp, TYRE.startTemp, TYRE.startTemp]);
+  readonly tyreWear = new Float64Array(4);
+  readonly tyreGrip = new Float64Array([1, 1, 1, 1]);
+  compound: CompoundId = 'medium';
+  /** Verschleißfaktor (Einstellung × Upgrade); 0 = kein Verschleiß. */
+  wearScale = 1;
+  /** Gripfaktor durch Upgrades. */
+  tyreBonus = 1;
   readonly steerWheel = new Float64Array(2);
   axG = 0;
   ayG = 0;
@@ -202,6 +212,8 @@ export class Vehicle {
       this.omega[i] = speed / this.wheelR[i];
       this.alphaLag[i] = 0;
       this.brakeTemp[i] = 250;
+      this.tyreWear[i] = 0;
+      this.tyreTemp[i] = TYRE.startTemp;
       this.fz[i] = 0;
       this.fx[i] = 0;
       this.fy[i] = 0;
@@ -539,10 +551,23 @@ export class Vehicle {
 
       const tire = front ? this.tireF : this.tireR;
       const fz = this.fz[i];
-      const grip = this.gripScale[i] * this.surfGrip[i] * (1 - 0.55 * this.punct[i]);
+      const comp = COMPOUNDS[this.compound];
+      const tg = comp.grip * gripFromTemp(this.tyreTemp[i], comp.topt) * gripFromWear(this.tyreWear[i]) * this.tyreBonus;
+      this.tyreGrip[i] = tg;
+      const grip = this.gripScale[i] * this.surfGrip[i] * tg * (1 - 0.55 * this.punct[i]);
       tire.compute(fz, kap, al, grip, this.tireOut);
       const fxT = this.tireOut[0];
       const fyT = -this.tireOut[1];
+      {
+        // Reifentemperatur und Verschleiß aus der Schlupfleistung
+        const pSlip = Math.abs(fxT * kap * vden) + Math.abs(fyT * vyw);
+        const T = this.tyreTemp[i];
+        const hot = Math.max(0, (T - 105) / 35);
+        const cool = (TYRE.coolK * (1 + TYRE.coolSpeed * Math.abs(vxw)) * (1 + 3 * hot * hot) * (T - TYRE.ambient)) / TYRE.heatCap;
+        this.tyreTemp[i] = T + (((TYRE.heatK * pSlip + TYRE.hysteresis * this.fz[i] * Math.abs(vxw)) / TYRE.heatCap) - cool) * dt;
+        const over = Math.max(0, (T - comp.topt - 12) / 20);
+        this.tyreWear[i] = Math.min(1, this.tyreWear[i] + TYRE.wearPerJoule * this.wearScale * comp.wear * pSlip * (1 + 1.2 * over * over) * dt);
+      }
       this.fx[i] = fxT;
       this.fy[i] = fyT;
       // Rollwiderstand wirkt nur auf den Aufbau
@@ -633,6 +658,15 @@ export class Vehicle {
     this.time += dt;
   }
 
+  /** Reifenwechsel: neue Reifen der Mischung `c`, vorgewärmt. */
+  fitTyres(c: CompoundId): void {
+    this.compound = c;
+    for (let i = 0; i < 4; i++) {
+      this.tyreWear[i] = 0;
+      this.tyreTemp[i] = TYRE.startTemp;
+    }
+  }
+
   /** Schreibt den Zustand in einen Snapshot-Puffer (siehe layout.ts). */
   writeSnapshot(out: Float64Array, b = 0): void {
     out[b + S.time] = this.time;
@@ -678,6 +712,10 @@ export class Vehicle {
       out[b + S.alpha + i] = this.alpha[i];
       out[b + S.susp + i] = this.susp[i];
       out[b + S.brakeTemp + i] = this.brakeTemp[i];
+      out[b + S.tyreTemp + i] = this.tyreTemp[i];
+      out[b + S.tyreWear + i] = this.tyreWear[i];
+      out[b + S.tyreGrip + i] = this.tyreGrip[i];
     }
+    out[b + S.compound] = COMPOUND_ORDER.indexOf(this.compound);
   }
 }

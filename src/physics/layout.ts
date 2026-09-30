@@ -54,6 +54,10 @@ export const S = {
   alpha: four(),
   susp: four(), // Einfederung je Rad [m]
   brakeTemp: four(),
+  tyreTemp: four(), // Reifenkerntemperatur [°C]
+  tyreWear: four(), // Verschleiß 0..1
+  compound: one(), // Index in COMPOUND_ORDER
+  tyreGrip: four(), // aktueller Gripfaktor je Rad
   // ---- Schäden (0 = heil, 1 = zerstört) ----
   dmgNose: one(),
   dmgWingF: one(),

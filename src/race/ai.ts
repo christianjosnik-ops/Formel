@@ -115,6 +115,9 @@ export class AIDriver {
     }
     const speed = Math.hypot(v.u, v.v);
     const idx = this.locate(v.x, v.y);
+    // Reifengrip (Temperatur, Verschleiß) bestimmt das fahrbare Tempo: schlechtere Reifen, vorsichtigere Fahrweise
+    const gAvg = 0.25 * (v.tyreGrip[0] + v.tyreGrip[1] + v.tyreGrip[2] + v.tyreGrip[3]);
+    level *= Math.pow(Math.min(1.03, gAvg / 0.985), 0.75);
 
     // ---- Fehler-Modell: langsames Rauschen des Tempos, seltene Fehlversuche ----
     const sigma = (1 - this.params.consistency) * 0.03;
