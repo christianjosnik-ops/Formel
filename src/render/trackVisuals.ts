@@ -116,6 +116,44 @@ function ribbon(t: Track, y: number, lat0: LatFn, lat1: LatFn, cond: (i: number)
   return g;
 }
 
+/** Gras/Gelände: weltfeste Farbvariation (große Flecken, mittlere Büschel, feines Korn) gegen den Kachel-Look. */
+function grassPatch(mat: THREE.MeshStandardMaterial, key: string, strength = 1): THREE.MeshStandardMaterial {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrassStr = { value: strength };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPosG;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPosG = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vWPosG;
+uniform float uGrassStr;
+float gh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float gn(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), f.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), f.x), f.y);
+}`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec2 q = vWPosG.xz;
+  float n1 = gn(q * 0.028);
+  float n2 = gn(q * 0.19 + 7.0);
+  float n3 = gn(q * 1.9 + 3.0);
+  float v = 0.80 + 0.26 * n1 + 0.16 * n2 + 0.10 * n3;
+  vec3 tint = mix(vec3(0.96, 1.02, 0.82), vec3(0.74, 0.90, 0.58), n1);
+  diffuseColor.rgb *= mix(vec3(1.0), v * tint, uGrassStr);
+}`,
+      );
+  };
+  mat.customProgramCacheKey = () => key;
+  mat.needsUpdate = true;
+  return mat;
+}
+
 function layerMat(map: THREE.Texture | null, layer: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
     map,
@@ -699,7 +737,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     g.setIndex(index);
     g.computeVertexNormals();
     const tex = surfaceTexture('grass');
-    const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1, metalness: 0 }));
+    const mesh = new THREE.Mesh(g, grassPatch(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1, metalness: 0 }), 'grass-terrain', 0.9));
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
@@ -734,7 +772,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     return m;
   };
   // gepflegter Rasen bis zur Barriere
-  const lawnMat = layerMat(lawnTex, 1, { color: 0xb6d19a, roughness: 1 });
+  const lawnMat = grassPatch(layerMat(lawnTex, 1, { color: 0xb6d19a, roughness: 1 }), 'grass-lawn', 0.6);
   add(ribbon(t, 0.004, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   add(ribbon(t, 0.004, (i) => -(t.wr[i] + t.barrierR[i]), (i) => -(t.wr[i] + t.kerbR[i]), () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   // Kies
@@ -835,9 +873,13 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
       const c2 = new THREE.ConeGeometry(0.22, 0.52, 7).translate(0, 0.86, 0);
       const c3 = new THREE.ConeGeometry(0.14, 0.4, 7).translate(0, 1.12, 0);
       const colorize = (g: THREE.BufferGeometry, r: number, gr: number, b: number) => {
-        const n = g.getAttribute('position').count;
+        const pp = g.getAttribute('position');
+        const n = pp.count;
         const a = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) a.set([r, gr, b], i * 3);
+        for (let i = 0; i < n; i++) {
+          const k = 0.62 + 0.5 * Math.min(1, Math.max(0, (pp.getY(i) - 0.3) / 0.9));
+          a.set([r * k, gr * k, b * k], i * 3);
+        }
         g.setAttribute('color', new THREE.BufferAttribute(a, 3));
         return g;
       };
@@ -863,9 +905,14 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
       const crown = soft(new THREE.IcosahedronGeometry(0.42, 1).scale(1, 0.85, 1).translate(0, 0.78, 0), 0, 0.78, 0);
       const crown2 = soft(new THREE.IcosahedronGeometry(0.3, 0).translate(0.22, 0.6, 0.1), 0.22, 0.6, 0.1);
       const colorize = (g: THREE.BufferGeometry, r: number, gr: number, b: number) => {
-        const n = g.getAttribute('position').count;
+        const pp = g.getAttribute('position');
+        const n = pp.count;
         const a = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) a.set([r, gr, b], i * 3);
+        for (let i = 0; i < n; i++) {
+          // Krone unten dunkler (Eigenverschattung), oben heller, leichtes Rauschen pro Vertex
+          const k = r > 0.5 && gr > 0.5 ? 0.6 + 0.55 * Math.min(1, Math.max(0, (pp.getY(i) - 0.45) / 0.75)) + 0.06 * Math.sin(i * 12.9898) : 1;
+          a.set([r * k, gr * k, b * k], i * 3);
+        }
         g.setAttribute('color', new THREE.BufferAttribute(a, 3));
         return g;
       };
