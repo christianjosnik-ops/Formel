@@ -1,5 +1,5 @@
 import type { FromWorker, ToWorker } from './messages';
-import { SNAP_SIZE, S } from './layout';
+import { BODY_STRIDE, MAX_BODIES, SNAP_SIZE, S } from './layout';
 import type { DriverInput } from './vehicle';
 
 /**
@@ -55,6 +55,9 @@ export class PhysicsClient {
   reset(x = 0, y = 0, psi = 0, speed = 0): void {
     this.send({ type: 'reset', x, y, psi, speed });
   }
+  repair(): void {
+    this.send({ type: 'repair' });
+  }
   pause(paused: boolean): void {
     this.send({ type: 'pause', paused });
   }
@@ -85,17 +88,38 @@ export class PhysicsClient {
     let t = span > 1e-6 ? (tRender - a[S.time]) / span : 1;
     if (t > 1.5) t = 1.5;
     if (t < 0) t = 0;
-    for (let k = 0; k < SNAP_SIZE; k++) out[k] = a[k] + (b[k] - a[k]) * t;
+    // Skalare Felder (bis zu den Kontakten) interpolieren; Kontakte, Dellen, Körper vom neueren Snapshot
+    const nScalar = S.contacts;
+    for (let k = 0; k < nScalar; k++) out[k] = a[k] + (b[k] - a[k]) * t;
+    for (let k = nScalar; k < SNAP_SIZE; k++) out[k] = b[k];
+    // Körper (Kegel, Trümmer): Position nur zwischen gleichen Einträgen mischen
+    const nb = Math.min(MAX_BODIES, b[S.nBodies] | 0);
+    const na = Math.min(MAX_BODIES, a[S.nBodies] | 0);
+    for (let i = 0; i < nb && i < na; i++) {
+      const ob = S.bodies + i * BODY_STRIDE;
+      if (a[ob] === b[ob] && a[ob + 7] === b[ob + 7]) {
+        out[ob + 1] = a[ob + 1] + (b[ob + 1] - a[ob + 1]) * t;
+        out[ob + 2] = a[ob + 2] + (b[ob + 2] - a[ob + 2]) * t;
+        out[ob + 4] = a[ob + 4] + (b[ob + 4] - a[ob + 4]) * t;
+        out[ob + 6] = a[ob + 6] + (b[ob + 6] - a[ob + 6]) * t;
+        let dp = b[ob + 3] - a[ob + 3];
+        dp -= Math.round(dp / (2 * Math.PI)) * 2 * Math.PI;
+        out[ob + 3] = a[ob + 3] + dp * t;
+      }
+    }
     // Gier periodisch interpolieren
     let dpsi = b[S.psi] - a[S.psi];
     dpsi -= Math.round(dpsi / (2 * Math.PI)) * 2 * Math.PI;
     out[S.psi] = a[S.psi] + dpsi * t;
-    // Ganzzahl-/Zustandswerte vom neueren Snapshot
+    // Zustandswerte vom neueren Snapshot
     out[S.gear] = b[S.gear];
     out[S.absActive] = b[S.absActive];
     out[S.tcActive] = b[S.tcActive];
     out[S.stepMs] = b[S.stepMs];
     out[S.hz] = b[S.hz];
+    out[S.retired] = b[S.retired];
+    out[S.crashLevel] = b[S.crashLevel];
+    out[S.nBodies] = b[S.nBodies];
     return true;
   }
 

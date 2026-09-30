@@ -23,6 +23,7 @@ export class Controls {
   gamepadName = '';
 
   onReset: () => void = () => {};
+  onRepair: () => void = () => {};
   onCamera: () => void = () => {};
   onToggleMenu: () => void = () => {};
   onToggleTelemetry: () => void = () => {};
@@ -43,6 +44,9 @@ export class Controls {
           break;
         case 'KeyC':
           this.onCamera();
+          break;
+        case 'KeyB':
+          this.onRepair();
           break;
         case 'KeyT':
           this.onToggleTelemetry();

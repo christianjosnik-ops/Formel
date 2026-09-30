@@ -6,6 +6,8 @@
 4. Energiemanagement 2026, aktive Aero, Teamunterschiede (teams.json wirkt nur über Physikparameter)
 5. KI-Gegner, Rennmodus, Boxenstopps, Schäden, Wetter
 
+Erweiterung in Phase 1: Fahrzeugmodell (Blender-Datei des Nutzers, per `tools/convert_model.py` zu GLB) mit Team-Lackdesign im Shader und die komplette Crash-Physik, siehe `docs/CRASH.md`.
+
 ## Phase 1: Modellannahmen
 
 - Körper: x, y, Gieren (Karosserieachsen) plus Hub, Wanken, Nicken über Feder/Dämpfer/Stabi je Rad, vier Raddrehungen (implizit integriert)

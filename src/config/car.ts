@@ -200,7 +200,7 @@ const baseTire: TireParams = {
   rBy3: 0.0,
   rCy1: 1.05,
   relaxLength: 0.35,
-  radius: 0.335,
+  radius: 0.345,
   width: 0.28,
   inertia: 1.3,
 };
@@ -211,8 +211,8 @@ export const TEST_CAR_2026: CarConfig = {
   geometry: {
     wheelbase: 3.4,
     frontWeight: 0.455,
-    trackFront: 1.58,
-    trackRear: 1.52,
+    trackFront: 1.473,
+    trackRear: 1.479,
     cgHeight: 0.275,
     rollCenterFront: 0.035,
     rollCenterRear: 0.085,

@@ -34,7 +34,7 @@ export class TireModel {
   /** Reine Längskraft Fx0(kappa). */
   pureFx(fz: number, kappa: number, grip: number): number {
     const p = this.p;
-    const D = this.muX(fz) * grip * fz;
+    const D = Math.max(this.muX(fz) * grip * fz, 1);
     const B = (p.kxStiff * fz) / (p.Cx * D);
     const bk = B * kappa;
     return D * Math.sin(p.Cx * Math.atan(bk - p.Ex * (bk - Math.atan(bk))));
@@ -43,7 +43,7 @@ export class TireModel {
   /** Reine Querkraft Fy0(alpha). */
   pureFy(fz: number, alpha: number, grip: number): number {
     const p = this.p;
-    const D = this.muY(fz) * grip * fz;
+    const D = Math.max(this.muY(fz) * grip * fz, 1);
     const B = this.cornerStiffness(fz) / (p.Cy * D);
     const ba = B * alpha;
     return D * Math.sin(p.Cy * Math.atan(ba - p.Ey * (ba - Math.atan(ba))));

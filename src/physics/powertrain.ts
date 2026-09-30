@@ -17,6 +17,8 @@ export class Powertrain {
   shiftTimer = 0;
   rpm = 0;
   clutchSlipping = true;
+  /** Leistungsfaktor durch Schäden (1 = voll). */
+  powerScale = 1;
 
   /** Ergebnisse des letzten step(). */
   iceWheelTorque = 0;
@@ -67,7 +69,7 @@ export class Powertrain {
   /** Motormoment bei Volllast [Nm]. */
   iceTorque(rpm: number): number {
     const w = Math.max(rpm, 1000) * RPM_TO_RAD;
-    return (this.c.engine.iceMaxPower * this.powerFraction(rpm)) / w;
+    return (this.c.engine.iceMaxPower * this.powerScale * this.powerFraction(rpm)) / w;
   }
 
   dragTorque(rpm: number): number {
@@ -145,7 +147,7 @@ export class Powertrain {
     const e = c.ers;
     let pk = 0;
     if (soc > 0 && kDeploy > 0) {
-      pk = e.kMaxPower * this.kTaper(speed) * kDeploy;
+      pk = e.kMaxPower * this.powerScale * this.kTaper(speed) * kDeploy;
     }
     const wk = Math.max(w, 8);
     let tk = (pk * e.efficiency) / wk;

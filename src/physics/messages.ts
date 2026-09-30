@@ -5,7 +5,8 @@ export type ToWorker =
   | { type: 'reset'; x: number; y: number; psi: number; speed: number }
   | { type: 'recycle'; buf: Float64Array }
   | { type: 'pause'; paused: boolean }
-  | { type: 'brakeBias'; bias: number };
+  | { type: 'brakeBias'; bias: number }
+  | { type: 'repair' };
 
 export type FromWorker =
   | { type: 'ready'; hz: number }

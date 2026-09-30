@@ -4,6 +4,8 @@ import { PHYS } from '../config/physics';
 import type { FromWorker, ToWorker } from './messages';
 import { SNAP_SIZE, S } from './layout';
 import { Vehicle } from './vehicle';
+import { World } from './world';
+import { buildProvingGround } from '../world/provingGround';
 
 /**
  * Physik-Worker: feste Schrittweite mit Zeitakkumulator, unabhängig von der Renderrate.
@@ -12,6 +14,7 @@ import { Vehicle } from './vehicle';
  */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const car = new Vehicle(TEST_CAR_2026);
+const world = new World(buildProvingGround(), [car]);
 const pool: Float64Array[] = [];
 let paused = false;
 let acc = 0;
@@ -22,7 +25,7 @@ let lastPost = 0;
 
 function post(): void {
   const buf = pool.pop() ?? new Float64Array(SNAP_SIZE);
-  car.writeSnapshot(buf);
+  world.writeSnapshot(buf, 0);
   buf[S.stepMs] = stepMsAvg;
   buf[S.hz] = hzAvg;
   const msg: FromWorker = { type: 'snap', buf };
@@ -40,7 +43,7 @@ function tick(): void {
     let steps = 0;
     const t0 = performance.now();
     while (acc >= dt && steps < PHYS.maxCatchUpSteps) {
-      car.step(dt);
+      world.step(dt);
       acc -= dt;
       steps++;
     }
@@ -68,13 +71,16 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
       Object.assign(car.input, m.input);
       break;
     case 'reset':
-      car.reset(m.x, m.y, m.psi, m.speed);
+      world.reset(0, m.x, m.y, m.psi, m.speed);
       break;
     case 'recycle':
       if (pool.length < 6) pool.push(m.buf);
       break;
     case 'pause':
       paused = m.paused;
+      break;
+    case 'repair':
+      world.repair(0);
       break;
     case 'brakeBias':
       car.cfg.brakes.bias = m.bias;

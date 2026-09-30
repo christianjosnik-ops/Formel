@@ -1,5 +1,6 @@
 import { S } from '../physics/layout';
 import { TEST_CAR_2026 } from '../config/car';
+import { HULL } from '../physics/crash/hull';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -38,6 +39,10 @@ export class Hud {
   private gTrail: Array<[number, number]> = [];
   private fps = 60;
   private flashT = 0;
+  private readonly dmgPanel = $('damage');
+  private readonly dmgCanvas = $('dmgCanvas') as HTMLCanvasElement;
+  private readonly dmgText = $('dmgText');
+  private readonly dmgTitle = $('dmgTitle');
 
   constructor() {
     for (let i = 0; i < 15; i++) {
@@ -101,6 +106,8 @@ export class Hud {
     this.absChip.className = `chip ${absLevel === 0 ? 'off' : s[S.absActive] ? 'on' : ''}`;
     this.tcChip.style.opacity = tcLevel === 0 ? '0.4' : '1';
     this.absChip.style.opacity = absLevel === 0 ? '0.4' : '1';
+
+    this.updateDamage(s);
 
     if (this.telemetry.classList.contains('hidden')) return;
 
@@ -214,5 +221,95 @@ export class Hud {
     g.fillStyle = 'rgba(255,255,255,.7)';
     g.font = '10px system-ui';
     g.fillText(`${Math.hypot(ax, ay).toFixed(1)} g`, 6, 12);
+  }
+
+  // ------------------------------------------------------------------------------------------
+  private static dmgColor(d: number): string {
+    const t = Math.max(0, Math.min(1, d));
+    const r = t < 0.5 ? 43 + (255 - 43) * (t / 0.5) : 255;
+    const g = t < 0.5 ? 209 + (194 - 209) * (t / 0.5) : 194 - 194 * ((t - 0.5) / 0.5) + 59 * ((t - 0.5) / 0.5);
+    const b = t < 0.5 ? 126 + (51 - 126) * (t / 0.5) : 51 + (48 - 51) * ((t - 0.5) / 0.5);
+    return `rgb(${r | 0},${Math.max(0, g) | 0},${b | 0})`;
+  }
+
+  /** Schadenspanel: Draufsicht mit Zonenfarben, Crash-Stufe, Spitzen-g, Einschlaggeschwindigkeit. */
+  private updateDamage(s: Float64Array): void {
+    const any =
+      s[S.crashLevel] > 0 ||
+      s[S.dmgWingF] > 0.02 ||
+      s[S.dmgWingR] > 0.02 ||
+      s[S.dmgNose] > 0.02 ||
+      s[S.dmgSideL] > 0.02 ||
+      s[S.dmgSideR] > 0.02 ||
+      s[S.dmgFloor] > 0.05 ||
+      s[S.retired] > 0 ||
+      s[S.wheelOff] + s[S.wheelOff + 1] + s[S.wheelOff + 2] + s[S.wheelOff + 3] > 0;
+    this.dmgPanel.classList.toggle('hidden', !any);
+    if (!any) return;
+    const level = Math.round(s[S.crashLevel]);
+    const names = ['Kleiner Schaden', 'Leichter Crash', 'Mittlerer Crash', 'Schwerer Crash', 'Extremer Crash'];
+    this.dmgTitle.textContent = s[S.retired] > 0 ? 'AUSGEFALLEN' : names[level];
+    this.dmgTitle.className = `l${s[S.retired] > 0 ? 4 : level}`;
+    const engine = Math.round((1 - s[S.dmgEngine]) * 100);
+    const floor = Math.round((1 - s[S.dmgFloor]) * 100);
+    this.dmgText.innerHTML =
+      `${s[S.peakG].toFixed(0)} g · ${s[S.impactSpeed].toFixed(0)} km/h · ${s[S.impactEnergy].toFixed(0)} kJ<br>` + `Antrieb ${engine} % · Boden ${floor} %`;
+
+    const c = this.dmgCanvas;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, c.width, c.height);
+    const k = 40; // px pro Meter
+    const cx = c.width / 2;
+    const ox = 0.55; // x-Mitte des Fahrzeugs
+    const X = (y: number) => cx - y * k;
+    const Y = (x: number) => 118 - (x - ox) * k;
+    const rect = (x0: number, x1: number, y0: number, y1: number, fill: string, dashed = false) => {
+      g.beginPath();
+      g.rect(X(y1), Y(x1), (y1 - y0) * k, (x1 - x0) * k);
+      if (dashed) {
+        g.setLineDash([3, 3]);
+        g.strokeStyle = 'rgba(255,255,255,.55)';
+        g.lineWidth = 1.3;
+        g.stroke();
+        g.setLineDash([]);
+      } else {
+        g.fillStyle = fill;
+        g.fill();
+        g.strokeStyle = 'rgba(0,0,0,.45)';
+        g.lineWidth = 1;
+        g.stroke();
+      }
+    };
+    // Rumpf
+    g.fillStyle = 'rgba(255,255,255,.12)';
+    g.beginPath();
+    for (let i = 0; i < HULL.polyN; i++) {
+      const x = X(HULL.polyY[i]);
+      const y = Y(HULL.polyX[i]);
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fill();
+    const wf = s[S.dmgWingF];
+    const wr = s[S.dmgWingR];
+    rect(2.45, 3.11, -0.86, 0.86, Hud.dmgColor(wf), wf >= 1);
+    rect(-1.94, -1.6, -0.5, 0.5, Hud.dmgColor(wr), wr >= 1);
+    rect(2.0, 3.0, -0.16, 0.16, Hud.dmgColor(s[S.dmgNose]));
+    rect(-1.0, 2.0, -0.3, 0.3, Hud.dmgColor(s[S.dmgEngine] * 0.8));
+    rect(-1.0, 1.15, 0.3, 0.53, Hud.dmgColor(s[S.dmgSideL]));
+    rect(-1.0, 1.15, -0.53, -0.3, Hud.dmgColor(s[S.dmgSideR]));
+    rect(-1.72, -1.0, -0.25, 0.25, Hud.dmgColor(s[S.dmgRear]));
+    const gf = TEST_CAR_2026.geometry;
+    const lr = gf.frontWeight * gf.wheelbase;
+    const lf = gf.wheelbase - lr;
+    const wheelX = [lf, lf, -lr, -lr];
+    const wheelY = [gf.trackFront / 2, -gf.trackFront / 2, gf.trackRear / 2, -gf.trackRear / 2];
+    for (let i = 0; i < 4; i++) {
+      const off = s[S.wheelOff + i] > 0.5;
+      const dmg = Math.max(Math.abs(s[S.bent + i]) / 0.075, s[S.puncture + i]);
+      const w = i < 2 ? 0.19 : 0.23;
+      rect(wheelX[i] - 0.36, wheelX[i] + 0.36, wheelY[i] - w, wheelY[i] + w, Hud.dmgColor(dmg * 0.9), off);
+    }
   }
 }

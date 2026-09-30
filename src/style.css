@@ -125,3 +125,13 @@ body.showroom #pads, body.showroom #bars { display: none; }
   #brakePad { right: calc(16vw + 24px); }
   #aeroBtn { right: calc(32vw + 38px); }
 }
+
+/* ---------- Schadensanzeige ---------- */
+#damage { position: fixed; right: calc(10px + var(--safe-r)); top: calc(58px + var(--safe-t)); padding: 8px 10px 10px; width: 172px; z-index: 4; text-align: center; font-size: 11px; }
+#dmgTitle { font-weight: 800; letter-spacing: .6px; margin-bottom: 4px; font-size: 12px; }
+#dmgTitle.l0 { color: var(--acc); } #dmgTitle.l1 { color: #b5e04a; } #dmgTitle.l2 { color: var(--amb); } #dmgTitle.l3 { color: #ff8a3d; } #dmgTitle.l4 { color: var(--red); }
+#dmgCanvas { width: 150px; height: 236px; display: block; margin: 0 auto; }
+#dmgText { margin: 4px 0 6px; color: #cfd6dc; line-height: 1.4; min-height: 30px; }
+#btnRepair { width: 100%; font-size: 12px; padding: 6px 8px; pointer-events: auto; }
+@media (max-height: 520px) { #damage { transform: scale(.78); transform-origin: top right; } }
+body.showroom #damage { display: none; }

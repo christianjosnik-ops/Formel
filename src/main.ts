@@ -1,5 +1,4 @@
 import './style.css';
-import * as THREE from 'three';
 import { TEST_CAR_2026 } from './config/car';
 import teams from './data/teams.json';
 import drivers from './data/drivers.json';
@@ -7,11 +6,15 @@ import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
 import { PhysicsClient } from './physics/client';
-import { S } from './physics/layout';
+import { CONTACT_STRIDE, MAX_CONTACTS, S } from './physics/layout';
 import { newInput } from './physics/vehicle';
 import { CarModel, type Livery } from './render/carModel';
+import { loadCarAssets } from './render/carAssets';
 import { CameraRig } from './render/cameraRig';
 import { createScene } from './render/scene';
+import { DebrisRenderer, Effects } from './render/effects';
+import { buildWorldVisuals } from './render/worldVisuals';
+import { buildProvingGround } from './world/provingGround';
 import { Hud } from './ui/hud';
 import { setupMenu } from './ui/menu';
 
@@ -20,6 +23,11 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const bundle = createScene(canvas);
 const { renderer, scene, camera } = bundle;
 
+const worldMap = buildProvingGround();
+const visuals = buildWorldVisuals(scene, worldMap);
+const effects = new Effects(scene, worldMap);
+let debris: DebrisRenderer | null = null;
+
 const physics = new PhysicsClient();
 const controls = new Controls(settings);
 setupTouchPads(controls);
@@ -27,14 +35,12 @@ const hud = new Hud();
 hud.setTelemetryVisible(settings.telemetry);
 
 // ---------------------------------------------------------------- Fahrzeug / Livree
+const assets = await loadCarAssets();
 let car!: CarModel;
 function buildCar(): void {
   if (car) {
     scene.remove(car.root);
-    car.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose?.();
-    });
+    car.dispose();
   }
   const team = teams.find((t) => t.id === settings.team) ?? teams[0];
   const driver = drivers.find((d) => d.team === team.id) ?? drivers[0];
@@ -44,10 +50,14 @@ function buildCar(): void {
     accent: team.colors.accent,
     number: driver.number,
     helmet: driver.helmet,
+    teamName: team.name,
+    engineName: team.engine,
     compound: settings.compound,
   };
-  car = new CarModel(TEST_CAR_2026, livery);
+  car = new CarModel(TEST_CAR_2026, livery, assets);
   scene.add(car.root);
+  debris?.dispose();
+  debris = new DebrisRenderer(scene, car.debrisTemplates);
   rig?.setMode(rig.mode, car);
 }
 const rig = new CameraRig(camera, canvas);
@@ -71,6 +81,9 @@ const menu = setupMenu(settings, controls, {
 document.getElementById('buildInfo')!.textContent = `Build ${__BUILD__}`;
 
 const resetCar = () => physics.reset(0, 0, 0, 0);
+const repairCar = () => physics.repair();
+controls.onRepair = repairCar;
+document.getElementById('btnRepair')!.addEventListener('click', repairCar);
 controls.onReset = resetCar;
 controls.onCamera = () => {
   settings.camera = rig.cycle(car);
@@ -114,6 +127,7 @@ let fpsAcc = 0;
 let fpsFrames = 0;
 let fps = 60;
 let loaded = false;
+let shake = 0;
 let lowCount = 0;
 let highCount = 0;
 
@@ -131,6 +145,24 @@ function frame(now: number): void {
     const s = physics.out;
     car.update(s, dt);
     rig.update(s, dt, car);
+    visuals.updateCones(s);
+    debris?.update(s);
+    effects.setPixelScale(renderer.domElement.height, camera.fov);
+    effects.update(s, dt);
+    // Kamera-Schütteln bei Einschlägen
+    {
+      let f = 0;
+      for (let k = 0; k < MAX_CONTACTS; k++) f += s[S.contacts + k * CONTACT_STRIDE + 4];
+      const target = Math.min(1, f / 220e3);
+      shake = Math.max(target, shake * Math.exp(-dt * 5));
+      if (shake > 0.01 && rig.mode !== 'showroom') {
+        const a = shake * (rig.mode === 'cockpit' ? 0.09 : 0.3);
+        camera.position.x += (Math.random() - 0.5) * a;
+        camera.position.y += (Math.random() - 0.5) * a;
+        camera.position.z += (Math.random() - 0.5) * a;
+        camera.rotation.z += (Math.random() - 0.5) * 0.05 * shake;
+      }
+    }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
     hud.update(s, dt, settings.tc, settings.abs);
     if (!loaded) {
