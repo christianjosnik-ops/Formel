@@ -381,7 +381,7 @@ export class RaceDirector {
         continue;
       }
       // Startspur halten, bis die erste Kurve nahe ist
-      e.ai.laneBias = e.gridLat * Math.max(0, 1 - Math.max(0, e.dist) / 550) - this.line.offset[e.idx] * Math.max(0, 1 - Math.max(0, e.dist) / 550);
+      e.ai.laneBias = e.gridLat * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800) - this.line.offset[e.idx] * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800);
       const { ahead, beside } = this.neighbours(e, ents);
       const mode: AIMode = e.finished ? 'cooldown' : 'race';
       // Gummiband: Feld bleibt beim Spieler (enges Rad-an-Rad-Rennen); zu weit Zurückliegende holen etwas auf,
