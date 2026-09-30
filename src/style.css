@@ -1,0 +1,127 @@
+:root {
+  --bg: #0b0d10;
+  --glass: rgba(14, 17, 22, 0.62);
+  --line: rgba(255, 255, 255, 0.14);
+  --txt: #f2f5f8;
+  --mut: #9aa4ae;
+  --acc: #19d3a2;
+  --red: #ff4a3d;
+  --amb: #ffc233;
+  --blue: #4da3ff;
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt); overflow: hidden; overscroll-behavior: none;
+  font: 500 14px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+button:active { background: rgba(255,255,255,0.18); }
+.hidden { display: none !important; }
+.muted { color: var(--mut); font-size: 12px; }
+
+#loading { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; background: var(--bg); z-index: 50; transition: opacity .4s; }
+#loading.gone { opacity: 0; pointer-events: none; }
+.spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #233; border-top-color: var(--acc); animation: sp 0.9s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
+#shiftlights { position: absolute; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%); display: flex; gap: 5px; }
+#shiftlights i { width: 13px; height: 13px; border-radius: 50%; background: rgba(255,255,255,0.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
+#shiftlights i.on.g { background: #22e07a; box-shadow: 0 0 10px #22e07a; }
+#shiftlights i.on.r { background: #ff3b30; box-shadow: 0 0 10px #ff3b30; }
+#shiftlights i.on.b { background: #4da3ff; box-shadow: 0 0 10px #4da3ff; }
+#shiftlights.flash i { background: #4da3ff; box-shadow: 0 0 12px #4da3ff; }
+
+#dash { position: absolute; left: calc(50% ); bottom: calc(18px + var(--safe-b)); transform: translateX(-50%); display: flex; align-items: flex-end; gap: 16px; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+#gear { font-size: 64px; font-weight: 800; line-height: 1; min-width: 44px; text-align: center; }
+#speed { font-size: 46px; font-weight: 700; line-height: 1; }
+#speed small, #rpm small { font-size: 13px; color: var(--mut); margin-left: 4px; font-weight: 600; }
+#rpm { font-size: 22px; font-weight: 600; color: #dfe6ec; }
+
+#bars { position: absolute; right: calc(14px + var(--safe-r)); top: 50%; transform: translateY(-50%); display: flex; gap: 8px; }
+.bar { position: relative; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden; }
+.bar.v { width: 14px; height: 120px; display: flex; align-items: flex-end; }
+.bar.v > div { width: 100%; height: 0; }
+.bar.v label { position: absolute; bottom: -18px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--mut); }
+.bar.h { width: 110px; height: 10px; }
+.bar.h > div { height: 100%; width: 0; background: linear-gradient(90deg, #19d3a2, #7dffd6); }
+#thrBar { background: #22e07a; }
+#brkBar { background: #ff4a3d; }
+
+#ers { padding: 6px 10px; background: var(--glass); border: 1px solid var(--line); border-radius: 10px; position: absolute; left: calc(14px + var(--safe-l)); top: calc(62px + var(--safe-t)); display: flex; flex-direction: column; gap: 4px; font-size: 12px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.ersrow { display: flex; align-items: center; gap: 8px; }
+.ersrow span { width: 50px; color: var(--mut); }
+.ersrow b { min-width: 52px; }
+
+#chips { position: absolute; left: calc(14px + var(--safe-l)); top: calc(10px + var(--safe-t)); display: flex; gap: 6px; }
+.chip { padding: 5px 10px; border-radius: 9px; background: var(--glass); border: 1px solid var(--line); font-weight: 800; font-size: 13px; letter-spacing: .5px; }
+.chip.off { color: #66707a; }
+.chip.on { color: #111; background: var(--amb); border-color: var(--amb); }
+#aeroChip.x { background: var(--blue); color: #001; border-color: var(--blue); }
+#aeroChip.z { background: var(--glass); color: var(--txt); }
+
+#topbtns { position: fixed; right: calc(10px + var(--safe-r)); top: calc(8px + var(--safe-t)); display: flex; gap: 6px; z-index: 5; }
+#topbtns button { padding: 6px 10px; font-size: 18px; }
+
+/* ---------- Telemetrie ---------- */
+.panel { background: var(--glass); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+#telemetry { position: fixed; left: calc(10px + var(--safe-l)); top: calc(118px + var(--safe-t)); padding: 8px; width: 360px; pointer-events: none; font-size: 11px; }
+#trace { width: 340px; height: 120px; display: block; border-radius: 8px; background: rgba(0,0,0,.25); }
+#tmRow { display: flex; gap: 8px; margin-top: 6px; }
+#gmeter { width: 120px; height: 120px; border-radius: 8px; background: rgba(0,0,0,.25); }
+#tires { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.tire { background: rgba(255,255,255,0.06); border-radius: 6px; padding: 4px 6px; line-height: 1.25; }
+.tire b { display: block; font-size: 10px; color: var(--mut); }
+.tire .load { height: 4px; background: rgba(255,255,255,.12); border-radius: 2px; overflow: hidden; margin: 2px 0; }
+.tire .load i { display: block; height: 100%; background: var(--acc); }
+#stats { margin: 6px 0 0; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfd6dc; white-space: pre-wrap; }
+
+/* ---------- Touch-Pads ---------- */
+#pads { position: fixed; inset: 0; pointer-events: none; }
+.pad { position: absolute; pointer-events: auto; background: rgba(255,255,255,0.07); border: 1px solid var(--line); border-radius: 22px; touch-action: none; overflow: hidden; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.pad .lbl { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 11px; letter-spacing: 2px; color: rgba(255,255,255,.4); pointer-events: none; }
+#steerPad { left: calc(14px + var(--safe-l)); bottom: calc(14px + var(--safe-b)); width: min(44vw, 440px); height: min(30vh, 170px); }
+#steerPad .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.12) 0 2px, transparent 2px calc(100%/10)); opacity: .55; pointer-events: none; }
+#steerPad .ticks::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; background: rgba(255,255,255,.4); transform: translateX(-50%); }
+#steerKnob { position: absolute; top: 12%; bottom: 12%; width: 18%; left: 50%; transform: translateX(-50%); border-radius: 16px; background: rgba(255,255,255,0.5); box-shadow: 0 0 16px rgba(255,255,255,.3); pointer-events: none; }
+.pedal { bottom: calc(14px + var(--safe-b)); width: min(13vw, 120px); height: min(46vh, 290px); }
+#brakePad { right: calc(min(13vw, 120px) + 26px + var(--safe-r)); }
+#gasPad { right: calc(14px + var(--safe-r)); }
+.fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; pointer-events: none; opacity: .75; }
+.fill.gas { background: linear-gradient(0deg, #12a85a, #4dff9a); }
+.fill.brake { background: linear-gradient(0deg, #c4251a, #ff6b5e); }
+#aeroBtn { position: absolute; pointer-events: auto; right: calc(min(13vw, 120px) * 2 + 40px + var(--safe-r)); bottom: calc(14px + var(--safe-b)); width: 64px; height: 64px; border-radius: 50%; font-size: 10px; letter-spacing: 1px; line-height: 1.1; padding: 0; text-align: center; }
+#aeroBtn b { font-size: 22px; }
+#aeroBtn.x { background: var(--blue); color: #001; }
+#tiltHint { position: absolute; left: calc(14px + var(--safe-l)); bottom: calc(14px + var(--safe-b)); pointer-events: auto; display: none; }
+body.tilt #steerPad { display: none; }
+body.tilt #tiltHint { display: block; }
+body.showroom #pads, body.showroom #bars { display: none; }
+
+/* ---------- Menü ---------- */
+#menu { position: fixed; top: calc(52px + var(--safe-t)); right: calc(10px + var(--safe-r)); width: min(420px, calc(100vw - 20px)); max-height: calc(100vh - 70px - var(--safe-t)); z-index: 20; background: rgba(14,17,22,.88); }
+#menu .scroll { padding: 12px 14px 14px; max-height: calc(100vh - 80px - var(--safe-t)); overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+#menu h2 { margin: 0 0 6px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+#menu h3 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--mut); }
+#menu .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+#menu select, #menu input[type=range] { max-width: 180px; background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+#menu input[type=range] { padding: 0; }
+#menu input[type=checkbox] { width: 22px; height: 22px; }
+#menu p { margin: 8px 0 0; }
+@media (max-height: 520px) {
+  #gear { font-size: 46px; }
+  #speed { font-size: 34px; }
+  #telemetry { transform: scale(.82); transform-origin: top left; }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  #telemetry { width: calc(100vw - 20px); }
+  #steerPad { width: 54vw; height: 22vh; }
+  .pedal { height: 34vh; width: 16vw; }
+  #brakePad { right: calc(16vw + 24px); }
+  #aeroBtn { right: calc(32vw + 38px); }
+}

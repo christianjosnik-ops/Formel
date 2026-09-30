@@ -1,0 +1,13 @@
+[
+  { "id": "mercedes", "name": "Mercedes", "car": "W17", "engine": "Mercedes", "overall": 100, "engineRating": 96, "aero": 98, "tyreCare": 97, "gap": 0.0, "colors": { "primary": "#b9c3c9", "secondary": "#00d2be", "accent": "#0b0f12" } },
+  { "id": "redbull", "name": "Red Bull", "car": "RB22", "engine": "Red Bull Ford", "overall": 97, "engineRating": 100, "aero": 95, "gap": 0.2, "colors": { "primary": "#14215a", "secondary": "#e10600", "accent": "#ffd800" } },
+  { "id": "ferrari", "name": "Ferrari", "car": "SF26", "engine": "Ferrari", "overall": 96, "engineRating": 91, "aero": 98, "gap": 0.3, "colors": { "primary": "#dc0000", "secondary": "#ffffff", "accent": "#ffeb00" } },
+  { "id": "mclaren", "name": "McLaren", "car": "MCL40", "engine": "Mercedes", "overall": 96, "engineRating": 96, "aero": 95, "gap": 0.3, "colors": { "primary": "#ff8000", "secondary": "#47c7fc", "accent": "#111111" } },
+  { "id": "racingbulls", "name": "Racing Bulls", "car": "VCARB03", "engine": "Red Bull Ford", "overall": 90, "gap": 1.0, "colors": { "primary": "#f2f5ff", "secondary": "#1e41ff", "accent": "#0a1040" } },
+  { "id": "alpine", "name": "Alpine", "car": "A526", "engine": "Mercedes", "overall": 90, "gap": 1.0, "colors": { "primary": "#0a3cff", "secondary": "#ff87bc", "accent": "#ffffff" } },
+  { "id": "haas", "name": "Haas", "car": "VF26", "engine": "Ferrari", "overall": 86, "gap": 1.4, "colors": { "primary": "#eef0f2", "secondary": "#e6002b", "accent": "#101214" } },
+  { "id": "audi", "name": "Audi", "car": "R26", "engine": "Audi", "overall": 85, "gap": 1.5, "colors": { "primary": "#8d9299", "secondary": "#f50537", "accent": "#0c0d0f" } },
+  { "id": "williams", "name": "Williams", "car": "FW48", "engine": "Mercedes", "overall": 85, "gap": 1.5, "colors": { "primary": "#0a4bff", "secondary": "#ffffff", "accent": "#00a0de" } },
+  { "id": "astonmartin", "name": "Aston Martin", "car": "AMR26", "engine": "Honda", "overall": 82, "gap": 1.8, "colors": { "primary": "#00665e", "secondary": "#cedc00", "accent": "#0b1512" } },
+  { "id": "cadillac", "name": "Cadillac", "car": "MAC26", "engine": "Ferrari", "overall": 80, "gap": 2.0, "colors": { "primary": "#101114", "secondary": "#d9d9dd", "accent": "#e00020" } }
+]

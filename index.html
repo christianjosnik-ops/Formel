@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Formel 2026" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <title>Formel 2026</title>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <div id="loading"><div class="spin"></div><div>Physik startet …</div></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="shiftlights"></div>
+    <div id="dash">
+      <div id="gear">N</div>
+      <div id="speed"><span id="speedVal">0</span><small>km/h</small></div>
+      <div id="rpm"><span id="rpmVal">0</span><small>rpm</small></div>
+    </div>
+    <div id="bars">
+      <div class="bar v"><div id="brkBar"></div><label>B</label></div>
+      <div class="bar v"><div id="thrBar"></div><label>G</label></div>
+    </div>
+    <div id="ers">
+      <div class="ersrow"><span>ERS</span><div class="bar h"><div id="socBar"></div></div><b id="socVal">90%</b></div>
+      <div class="ersrow"><span>MGU-K</span><b id="kVal">0 kW</b></div>
+    </div>
+    <div id="chips">
+      <div class="chip" id="aeroChip">Z</div>
+      <div class="chip off" id="tcChip">TC</div>
+      <div class="chip off" id="absChip">ABS</div>
+    </div>
+  </div>
+
+  <!-- Telemetrie -->
+  <div id="telemetry" class="panel">
+    <canvas id="trace" width="340" height="120"></canvas>
+    <div id="tmRow">
+      <canvas id="gmeter" width="120" height="120"></canvas>
+      <div id="tires"></div>
+    </div>
+    <pre id="stats"></pre>
+  </div>
+
+  <!-- Top-Buttons -->
+  <div id="topbtns">
+    <button id="btnTelemetry" title="Telemetrie">📈</button>
+    <button id="btnCamera" title="Kamera">🎥</button>
+    <button id="btnReset" title="Zurücksetzen">↺</button>
+    <button id="btnMenu" title="Menü">☰</button>
+  </div>
+
+  <!-- Touch-Steuerung -->
+  <div id="pads">
+    <div id="steerPad" class="pad"><div class="ticks"></div><div id="steerKnob"></div><div class="lbl">LENKEN</div></div>
+    <button id="aeroBtn">AERO<br><b>Z</b></button>
+    <div id="brakePad" class="pad pedal"><div id="brakeFill" class="fill brake"></div><div class="lbl">BREMSE</div></div>
+    <div id="gasPad" class="pad pedal"><div id="gasFill" class="fill gas"></div><div class="lbl">GAS</div></div>
+    <div id="tiltHint"><button id="tiltCal">Nullpunkt</button></div>
+  </div>
+
+  <!-- Menü -->
+  <div id="menu" class="panel hidden">
+    <div class="scroll">
+      <h2>Einstellungen <button id="menuClose">✕</button></h2>
+
+      <h3>Steuerung</h3>
+      <div class="row">
+        <label>Lenkung</label>
+        <select id="selControl"><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung (iPad/iPhone)</option></select>
+      </div>
+      <div class="row" id="rowTilt">
+        <button id="btnTilt">Neigung aktivieren</button>
+        <span id="tiltState" class="muted"></span>
+      </div>
+      <div class="row"><label>Neigung: voller Lenkeinschlag</label><input id="rngTilt" type="range" min="20" max="60" step="1" /><span id="valTilt" class="muted"></span></div>
+      <div class="row"><label>Neigung invertieren</label><input id="chkTiltInv" type="checkbox" /></div>
+      <p class="muted">Gamepad wird automatisch erkannt (Sticks/Trigger). Tastatur: Pfeile/WASD, X Aero, R Reset, C Kamera, T Telemetrie.</p>
+
+      <h3>Fahrhilfen</h3>
+      <div class="row"><label>Traktionskontrolle</label><select id="selTc"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+      <div class="row"><label>ABS</label><select id="selAbs"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+      <div class="row"><label>Lenkhilfe</label><select id="selSteer"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+      <p class="muted">Die Physik bleibt identisch, Hilfen filtern nur die Eingaben.</p>
+
+      <h3>Fahrzeug</h3>
+      <div class="row"><label>Team</label><select id="selTeam"></select></div>
+      <div class="row"><label>Reifen</label><select id="selCompound"><option value="soft">Soft</option><option value="medium">Medium</option><option value="hard">Hard</option><option value="inter">Intermediate</option><option value="wet">Wet</option></select></div>
+      <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
+
+      <h3>Anzeige</h3>
+      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="cockpit">Cockpit</option><option value="tv">TV</option><option value="showroom">Showroom</option></select></div>
+      <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
+      <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
+      <p class="muted" id="buildInfo"></p>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
