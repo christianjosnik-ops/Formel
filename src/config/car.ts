@@ -254,7 +254,7 @@ export const TEST_CAR_2026: CarConfig = {
     yawDrag: 2.0,
   },
   engine: {
-    iceMaxPower: 450e3,
+    iceMaxPower: 400e3,
     idleRpm: 4500,
     revLimit: 15000,
     launchRpm: 8500,
