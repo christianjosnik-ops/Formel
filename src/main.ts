@@ -146,6 +146,7 @@ function startGame(): void {
   physics.restart(race ? raceConfig() : undefined);
   physics.setBrakeBias(settings.brakeBias);
   raceHud.setActive(race);
+  document.body.classList.toggle('race', race);
   if (race) {
     settings.telemetry = false;
     hud.setTelemetryVisible(false);
@@ -170,6 +171,7 @@ const start = setupStart(settings, (mapChanged) => {
 raceHud.onAgain = startGame;
 raceHud.onMenu = () => {
   raceHud.setActive(false);
+  document.body.classList.remove('race');
   clearAi();
   physics.restart(undefined);
   rig.setMode('showroom', car);

@@ -107,7 +107,7 @@ export class RaceHud {
 
   private board(physics: PhysicsClient, n: number): void {
     const rows = this.rows(physics, n);
-    const maxRows = window.innerHeight < 560 ? 9 : 22;
+    const maxRows = window.innerHeight < 520 ? 7 : window.innerHeight < 700 ? 12 : 22;
     let idx = rows.map((_, i) => i);
     let myI = rows.findIndex((r) => r === rows.find((x) => x[S.raceDriver] === physics.out[S.raceDriver]));
     if (myI < 0) myI = 0;

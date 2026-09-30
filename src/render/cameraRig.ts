@@ -105,11 +105,11 @@ export class CameraRig {
         this.yaw += d * Math.min(1, dt * 5);
         const fx = Math.cos(this.yaw);
         const fz = -Math.sin(this.yaw);
-        const dist = 6.8 + Math.min(speed, 90) * 0.012;
-        const h = 1.9 + Math.min(speed, 90) * 0.004;
+        const dist = 10.2 + Math.min(speed, 90) * 0.02;
+        const h = 3.0 + Math.min(speed, 90) * 0.008;
         this.pos.set(px - fx * dist, h, pz - fz * dist);
-        this.look.set(px + fx * 3.0, 0.75, pz + fz * 3.0);
-        targetFov = 60 + Math.min(speed, 100) * 0.14;
+        this.look.set(px + fx * 9.0, 0.6, pz + fz * 9.0);
+        targetFov = 58 + Math.min(speed, 100) * 0.14;
         break;
       }
       case 'cockpit': {

@@ -125,8 +125,8 @@ export class AIDriver {
     // ---- Überholen / Folgen ----
     const myLat = t.lateral(idx, v.x, v.y);
     let vCap = 1e9;
-    if (ahead && ahead.gap < 45 + speed * 1.2) {
-      const sameLane = Math.abs(ahead.lat - myLat) < 2.9;
+    if (ahead && ahead.gap < 55 + speed * 1.6) {
+      const sameLane = Math.abs(ahead.lat - myLat) < 3.3;
       const prof = line.speed[(idx + Math.round(speed * 0.3 / t.ds)) % n] * this.params.pace * level;
       if (this.side === 0 && ahead.gap < 26 && sameLane && (prof > ahead.speed + 0.3 || ahead.speed < 12) && this.rnd() < 0.05 + 0.6 * this.params.racecraft) {
         const mid = 0.5 * (line.lo[idx] + line.hi[idx]);
@@ -144,10 +144,10 @@ export class AIDriver {
       // Abstandsregelung: im gleichen Streifen nicht auffahren
       if (sameLane || Math.abs(this.latTarget + line.offset[idx] - ahead.lat) < 2.4) {
         // sicherer Abstand: aus dem Tempo des Vordermanns mit moderater Verzögerung noch anhaltbar
-        const room = Math.max(0, ahead.gap - 7.2);
-        const a = 0.55 * brakeLimit(speed);
+        const room = Math.max(0, ahead.gap - 9.5);
+        const a = 0.42 * brakeLimit(speed);
         vCap = Math.sqrt(ahead.speed * ahead.speed + 2 * a * room);
-        if (room < 1.5) vCap = Math.min(vCap, ahead.speed * 0.95);
+        if (room < 3) vCap = Math.min(vCap, ahead.speed * 0.92);
       }
     } else {
       this.side = 0;

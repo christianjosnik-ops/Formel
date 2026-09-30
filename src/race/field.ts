@@ -69,10 +69,10 @@ export function carConfigFor(): CarConfig {
 
 /** KI-Stärken: Faktor auf das Profiltempo. */
 export const AI_LEVELS = [
-  { id: 0, name: 'Anfänger', pace: 0.84, mistakes: 1.8 },
-  { id: 1, name: 'Mittel', pace: 0.92, mistakes: 1.2 },
-  { id: 2, name: 'Profi', pace: 0.97, mistakes: 0.8 },
-  { id: 3, name: 'Legende', pace: 1.0, mistakes: 0.4 },
+  { id: 0, name: 'Anfänger', pace: 0.64, mistakes: 3.0 },
+  { id: 1, name: 'Mittel', pace: 0.74, mistakes: 2.2 },
+  { id: 2, name: 'Profi', pace: 0.84, mistakes: 1.4 },
+  { id: 3, name: 'Legende', pace: 0.94, mistakes: 0.7 },
 ];
 
 /** Grundtempo eines Fahrers relativ zum besten (Verstappen 98): ca. 1.5 % Spannweite. */

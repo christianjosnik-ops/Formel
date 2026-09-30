@@ -201,3 +201,21 @@ body.showroom #race { display: none; }
 #stGo { width: 100%; margin-top: 14px; padding: 14px; font-size: 20px; font-weight: 800; letter-spacing: 4px; background: #e10600; color: #fff; border: 0; border-radius: 12px; }
 #stHint { margin-top: 8px; text-align: center; font-size: 12px; }
 @media (max-height: 520px) { .startBox { padding: 8px 12px; } .startTitle { font-size: 18px; margin-bottom: 6px; } .startGrid { gap: 4px 8px; font-size: 12px; } .startGrid select { padding: 4px; } #stGo { padding: 8px; margin-top: 8px; } }
+
+/* ---- Kleine Bildschirme (Handy quer): Rennen aufgeräumt ---- */
+@media (max-height: 520px) {
+  body.race #lapNo, body.race #lapInfo, body.race #ers, body.race #minimap, body.race #lapWarn { display: none; }
+  body.race #lap { top: calc(40px + var(--safe-t)); }
+  body.race #lapTime { font-size: 18px; }
+  body.race #raceInfo { font-size: 12px; padding: 2px 10px; }
+  body.race #chips { transform: scale(.8); transform-origin: top left; }
+  body.race #board { top: calc(38px + var(--safe-t)); width: 138px; font-size: 10px; padding: 2px; }
+  body.race #board .row { height: 14px; grid-template-columns: 14px 3px 28px 1fr; gap: 3px; }
+  body.race #dash { transform: translateX(-50%) scale(.7); transform-origin: bottom center; bottom: calc(6px + var(--safe-b)); }
+  body.race #damage { transform: scale(.55); transform-origin: top right; top: calc(46px + var(--safe-t)); }
+  body.race .pedal { width: 11vw; height: 40vh; }
+  body.race.arrows #gasPad { left: calc(11vw + 22px + var(--safe-l)); }
+  body.race .arrowBtn { width: 17vw; height: 32vh; }
+  body.race.arrows #aeroBtn { bottom: calc(32vh + 22px + var(--safe-b)); width: 52px; height: 52px; }
+  body.race #topbtns button { padding: 3px 8px; font-size: 15px; }
+}
