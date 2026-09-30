@@ -97,6 +97,7 @@ export class CrashState {
     this.pendingWingFront = this.pendingWingRear = false;
     this.pendingWheel.fill(0);
     this.wingFrontGone = this.wingRearGone = false;
+    this.lastEnergy = this.lastScrape = this.lastPeak = -1;
   }
 
   /** Einwärts-versetzte aktuelle Position des Punktes (Karosserie). */
@@ -208,6 +209,19 @@ export class CrashState {
     const g = forceMagnitude / (mass * 9.80665);
     this.gNow += (g - this.gNow) * Math.min(1, dt / 0.003);
     if (this.gNow > this.peakG) this.peakG = this.gNow;
+  }
+
+  private lastEnergy = -1;
+  private lastScrape = -1;
+  private lastPeak = -1;
+
+  /** True, wenn sich Energie, Schleifarbeit oder Spitzenverzögerung seit der letzten Auswertung geändert haben. */
+  needsEvaluate(): boolean {
+    if (this.totalEnergy === this.lastEnergy && this.scrapeEnergy === this.lastScrape && this.peakG === this.lastPeak) return false;
+    this.lastEnergy = this.totalEnergy;
+    this.lastScrape = this.scrapeEnergy;
+    this.lastPeak = this.peakG;
+    return true;
   }
 
   /** Leitet aus Energien und Verformungen Bauteilschäden ab. Einmal pro Schritt aufrufen. */

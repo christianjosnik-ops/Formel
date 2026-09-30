@@ -80,7 +80,41 @@
     <button id="aeroBtn">AERO<br><b>Z</b></button>
     <div id="brakePad" class="pad pedal"><div id="brakeFill" class="fill brake"></div><div class="lbl">BREMSE</div></div>
     <div id="gasPad" class="pad pedal"><div id="gasFill" class="fill gas"></div><div class="lbl">GAS</div></div>
+    <div id="arrowPad"><button id="btnLeft" class="arrowBtn">◀</button><button id="btnRight" class="arrowBtn">▶</button></div>
     <div id="tiltHint"><button id="tiltCal">Nullpunkt</button></div>
+  </div>
+
+  <!-- Rennen: Rangliste, Startampel, Ziel -->
+  <div id="race" class="hidden">
+    <div id="raceInfo"><span id="raceLap">RUNDE 1/3</span><span id="racePos">P1/22</span></div>
+    <div id="board"></div>
+    <div id="lights"><i></i><i></i><i></i><i></i><i></i></div>
+    <div id="banner"></div>
+  </div>
+  <div id="results" class="panel hidden">
+    <h2>Ergebnis</h2>
+    <div id="resList"></div>
+    <div class="resBtns"><button id="resAgain">Neues Rennen</button><button id="resMenu">Hauptmenü</button></div>
+  </div>
+
+  <!-- Startbildschirm -->
+  <div id="start" class="hidden">
+    <div class="startBox">
+      <div class="startTitle">FORMEL 2026</div>
+      <div class="startGrid">
+        <label>Modus</label><select id="stMode"><option value="race">Rennen</option><option value="free">Freies Fahren</option></select>
+        <label>Strecke</label><select id="stMap"></select>
+        <label>Fahrer / Team</label><select id="stDriver"></select>
+        <label class="rr">Runden</label><select id="stLaps" class="rr"><option>1</option><option>2</option><option>3</option><option>5</option><option>10</option><option>20</option></select>
+        <label class="rr">Gegner (KI)</label><select id="stAi" class="rr"><option value="-1">Aus (allein fahren)</option><option value="0">Anfänger</option><option value="1">Mittel</option><option value="2">Profi</option><option value="3">Legende</option></select>
+        <label class="rr ra">Starter</label><select id="stField" class="rr ra"><option value="22">22 Autos</option><option value="12">12 Autos</option><option value="6">6 Autos</option></select>
+        <label class="rr ra">Startplatz</label><select id="stGrid" class="rr ra"><option value="pole">Pole Position</option><option value="mid">Mittelfeld</option><option value="last">Letzter Platz</option><option value="random">Zufällig</option></select>
+        <label>Steuerung</label><select id="stControl"><option value="arrows">Pfeiltasten (rechts lenken, links Gas/Bremse)</option><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung</option></select>
+        <label>Fahrhilfen</label><select id="stAssist"><option value="2">Stark (Einsteiger)</option><option value="1">Mittel</option><option value="0">Aus (Profi)</option></select>
+      </div>
+      <button id="stGo">START</button>
+      <div class="muted" id="stHint"></div>
+    </div>
   </div>
 
   <!-- Menü -->
@@ -95,7 +129,7 @@
       <h3>Steuerung</h3>
       <div class="row">
         <label>Lenkung</label>
-        <select id="selControl"><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung (iPad/iPhone)</option></select>
+        <select id="selControl"><option value="arrows">Pfeiltasten (rechts lenken, links Gas/Bremse)</option><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung (iPad/iPhone)</option></select>
       </div>
       <div class="row" id="rowTilt">
         <button id="btnTilt">Neigung aktivieren</button>

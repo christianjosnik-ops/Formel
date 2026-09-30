@@ -95,6 +95,9 @@ export class Vehicle {
   extMRoll = 0;
   powerScale = 1;
   retired = 0;
+  /** Teamleistung (Ratings wirken nur über physikalische Parameter). */
+  teamPower = 1;
+  teamAero = 1;
   aeroDamageF = 1;
   aeroDamageR = 1;
   dragDamage = 1;
@@ -141,6 +144,8 @@ export class Vehicle {
   private readonly dSd = new Float64Array(4);
   private readonly dFs = new Float64Array(4); // dynamischer Federkraftanteil
   private readonly scrapeForce = new Float64Array(4);
+  private readonly dFxdKCache = new Float64Array(4);
+  private stepCount = 0;
   private readonly tqDrive = new Float64Array(4);
   private readonly tqBrake = new Float64Array(4);
 
@@ -244,6 +249,7 @@ export class Vehicle {
   step(dt: number): void {
     const cfg = this.cfg;
     const inp = this.input;
+    this.stepCount++;
     const g = PHYS.gravity;
     const geo = cfg.geometry;
     const susC = cfg.suspension;
@@ -344,7 +350,7 @@ export class Vehicle {
     // ---------------- Antrieb ----------------
     const wRear = 0.5 * (this.omega[2] + this.omega[3]);
     const kDeploy = this.kDeployOverride >= 0 ? this.kDeployOverride : thr;
-    this.powertrain.powerScale = this.powerScale;
+    this.powertrain.powerScale = this.powerScale * this.teamPower;
     this.powertrain.step(dt, wRear, thr, speed, this.soc, kDeploy);
     const pt = this.powertrain;
 
@@ -409,7 +415,7 @@ export class Vehicle {
     const hF = this.rideStatic[0] - 0.5 * (this.susp[0] + this.susp[1]);
     const hR = this.rideStatic[2] - 0.5 * (this.susp[2] + this.susp[3]);
     const beta = speed > 5 ? Math.atan2(this.v, Math.abs(this.u)) : 0;
-    this.aero.update(speed, hF, hR, this.aeroX, beta, this.aeroScaleFront * this.aeroDamageF, this.aeroScaleRear * this.aeroDamageR, this.dragScale * this.dragDamage);
+    this.aero.update(speed, hF, hR, this.aeroX, beta, this.aeroScaleFront * this.aeroDamageF * this.teamAero, this.aeroScaleRear * this.aeroDamageR * this.teamAero, this.dragScale * this.dragDamage);
     const dragK = 0.5 * PHYS.rhoAir * this.aero.cdA * speed;
     const fxAero = -dragK * this.u;
     const fyAero = -dragK * this.v;
@@ -489,8 +495,8 @@ export class Vehicle {
     for (let i = 0; i < 4; i++) {
       const front = i < 2;
       const delta = (front ? this.steerWheel[i] : 0) + this.toe[i];
-      const c = Math.cos(delta);
-      const s = Math.sin(delta);
+      const c = delta === 0 ? 1 : Math.cos(delta);
+      const s = delta === 0 ? 0 : Math.sin(delta);
       const vxb = u - r * this.yw[i];
       const vyb = v + r * this.xw[i];
       // Bodenkontakt von Unterboden/Radträger: Reibung bremst und erzeugt Funken
@@ -525,7 +531,8 @@ export class Vehicle {
       else if (kap < -1.5) kap = -1.5;
       const aSlide = Math.atan(vyw / vden);
       const relax = Math.max(Math.abs(vxw), PHYS.vMinRelax) / (front ? cfg.tiresFront.relaxLength : cfg.tiresRear.relaxLength);
-      this.alphaLag[i] += (aSlide - this.alphaLag[i]) * (1 - Math.exp(-relax * dt));
+      const ra = relax * dt;
+      this.alphaLag[i] += (aSlide - this.alphaLag[i]) * (1 - 1 / (1 + ra + 0.5 * ra * ra));
       const al = this.alphaLag[i];
       this.kappa[i] = kap;
       this.alpha[i] = al;
@@ -548,8 +555,12 @@ export class Vehicle {
       mz += this.xw[i] * fyb - this.yw[i] * fxb;
 
       // Ableitung dFx/dkappa für die implizite Raddrehzahl-Integration
-      tire.compute(fz, kap + 0.01, al, grip, this.tireOut2);
-      const dFxdK = Math.max(0, (this.tireOut2[0] - fxT) / 0.01);
+      // Ableitung nur reihum alle 4 Schritte neu berechnen (ändert sich langsam)
+      if (((this.stepCount + i) & 3) === 0) {
+        tire.compute(fz, kap + 0.01, al, grip, this.tireOut2);
+        this.dFxdKCache[i] = Math.max(0, (this.tireOut2[0] - fxT) / 0.01);
+      }
+      const dFxdK = this.dFxdKCache[i];
       this.kappa[i] = kap;
       // Raddrehung (implizit): I dw/dt = Td - R Fx
       let inertia = this.wheelI[i];
@@ -623,50 +634,50 @@ export class Vehicle {
   }
 
   /** Schreibt den Zustand in einen Snapshot-Puffer (siehe layout.ts). */
-  writeSnapshot(out: Float64Array): void {
-    out[S.time] = this.time;
-    out[S.x] = this.x;
-    out[S.y] = this.y;
-    out[S.psi] = this.psi;
-    out[S.u] = this.u;
-    out[S.v] = this.v;
-    out[S.r] = this.r;
-    out[S.heave] = this.z;
-    out[S.roll] = this.phi;
-    out[S.pitch] = this.theta;
-    out[S.speedKmh] = Math.hypot(this.u, this.v) * 3.6;
-    out[S.rpm] = this.powertrain.rpm;
-    out[S.gear] = this.powertrain.gear + 1;
-    out[S.throttle] = this.throttleEff;
-    out[S.brake] = this.brakeEff;
-    out[S.steer] = this.steer;
-    out[S.aeroX] = this.aeroX;
-    out[S.ax] = this.axG;
-    out[S.ay] = this.ayG;
-    out[S.soc] = this.soc;
-    out[S.fuel] = this.fuel;
-    out[S.mass] = this.mass;
-    out[S.rideFront] = this.rideStatic[0] - 0.5 * (this.susp[0] + this.susp[1]);
-    out[S.rideRear] = this.rideStatic[2] - 0.5 * (this.susp[2] + this.susp[3]);
-    out[S.downFront] = this.aero.downFront;
-    out[S.downRear] = this.aero.downRear;
-    out[S.drag] = 0.5 * PHYS.rhoAir * this.aero.cdA * (this.u * this.u + this.v * this.v);
-    out[S.icePower] = this.powertrain.icePowerMech;
-    out[S.kPower] = this.kPowerSigned;
-    out[S.absActive] = this.absActive;
-    for (let i = 0; i < 4; i++) out[S.scrape + i] = this.scrape[i];
-    out[S.tcActive] = this.tcActive;
-    out[S.steerL] = this.steerWheel[0];
-    out[S.steerR] = this.steerWheel[1];
+  writeSnapshot(out: Float64Array, b = 0): void {
+    out[b + S.time] = this.time;
+    out[b + S.x] = this.x;
+    out[b + S.y] = this.y;
+    out[b + S.psi] = this.psi;
+    out[b + S.u] = this.u;
+    out[b + S.v] = this.v;
+    out[b + S.r] = this.r;
+    out[b + S.heave] = this.z;
+    out[b + S.roll] = this.phi;
+    out[b + S.pitch] = this.theta;
+    out[b + S.speedKmh] = Math.hypot(this.u, this.v) * 3.6;
+    out[b + S.rpm] = this.powertrain.rpm;
+    out[b + S.gear] = this.powertrain.gear + 1;
+    out[b + S.throttle] = this.throttleEff;
+    out[b + S.brake] = this.brakeEff;
+    out[b + S.steer] = this.steer;
+    out[b + S.aeroX] = this.aeroX;
+    out[b + S.ax] = this.axG;
+    out[b + S.ay] = this.ayG;
+    out[b + S.soc] = this.soc;
+    out[b + S.fuel] = this.fuel;
+    out[b + S.mass] = this.mass;
+    out[b + S.rideFront] = this.rideStatic[0] - 0.5 * (this.susp[0] + this.susp[1]);
+    out[b + S.rideRear] = this.rideStatic[2] - 0.5 * (this.susp[2] + this.susp[3]);
+    out[b + S.downFront] = this.aero.downFront;
+    out[b + S.downRear] = this.aero.downRear;
+    out[b + S.drag] = 0.5 * PHYS.rhoAir * this.aero.cdA * (this.u * this.u + this.v * this.v);
+    out[b + S.icePower] = this.powertrain.icePowerMech;
+    out[b + S.kPower] = this.kPowerSigned;
+    out[b + S.absActive] = this.absActive;
+    for (let i = 0; i < 4; i++) out[b + S.scrape + i] = this.scrape[i];
+    out[b + S.tcActive] = this.tcActive;
+    out[b + S.steerL] = this.steerWheel[0];
+    out[b + S.steerR] = this.steerWheel[1];
     for (let i = 0; i < 4; i++) {
-      out[S.omega + i] = this.omega[i];
-      out[S.fz + i] = this.fz[i];
-      out[S.fx + i] = this.fx[i];
-      out[S.fy + i] = this.fy[i];
-      out[S.kappa + i] = this.kappa[i];
-      out[S.alpha + i] = this.alpha[i];
-      out[S.susp + i] = this.susp[i];
-      out[S.brakeTemp + i] = this.brakeTemp[i];
+      out[b + S.omega + i] = this.omega[i];
+      out[b + S.fz + i] = this.fz[i];
+      out[b + S.fx + i] = this.fx[i];
+      out[b + S.fy + i] = this.fy[i];
+      out[b + S.kappa + i] = this.kappa[i];
+      out[b + S.alpha + i] = this.alpha[i];
+      out[b + S.susp + i] = this.susp[i];
+      out[b + S.brakeTemp + i] = this.brakeTemp[i];
     }
   }
 }

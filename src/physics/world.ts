@@ -13,6 +13,7 @@ import {
   MAX_CONTACTS,
   MAX_DENTS,
   S,
+  CAR_BLOCK_DENTS,
 } from './layout';
 import type { Vehicle } from './vehicle';
 
@@ -52,6 +53,11 @@ export class World {
   private readonly bestD = new Float64Array(HULL.n);
   private readonly bestW = new Int32Array(HULL.n);
   private readonly wallMaxD: Float64Array;
+  private readonly candWalls = new Int32Array(256);
+  private readonly wallGrid = new Map<number, number[]>();
+  private readonly wallStamp: Int32Array;
+  private stamp = 0;
+  private static readonly WCELL = 60;
   private fwX = 0;
   private fwY = 0;
   private tz = 0;
@@ -83,6 +89,7 @@ export class World {
     this.wMinY = new Float64Array(n);
     this.wMaxY = new Float64Array(n);
     this.wallMaxD = new Float64Array(n);
+    this.wallStamp = new Int32Array(n);
     for (let i = 0; i < n; i++) {
       const w = map.walls[i];
       const dx = w.bx - w.ax;
@@ -96,6 +103,15 @@ export class World {
       this.wMaxX[i] = Math.max(w.ax, w.bx) + d;
       this.wMinY[i] = Math.min(w.ay, w.by) - d;
       this.wMaxY[i] = Math.max(w.ay, w.by) + d;
+      const C = World.WCELL;
+      for (let gx = Math.floor(this.wMinX[i] / C); gx <= Math.floor(this.wMaxX[i] / C); gx++) {
+        for (let gy = Math.floor(this.wMinY[i] / C); gy <= Math.floor(this.wMaxY[i] / C); gy++) {
+          const key = (gx + 2048) * 4096 + (gy + 2048);
+          const list = this.wallGrid.get(key);
+          if (list) list.push(i);
+          else this.wallGrid.set(key, [i]);
+        }
+      }
     }
     this.bodies.initCones(map.cones);
   }
@@ -107,6 +123,15 @@ export class World {
     this.bodies.resetAll();
     this.contactCount = 0;
     this.contacts.fill(0);
+    this.applyEffects(index);
+  }
+
+  /** Setzt ein Fahrzeug an eine Position zurück (Streckenposten), Schäden bleiben bestehen. */
+  teleport(index: number, x: number, y: number, psi: number): void {
+    const cs = this.crash[index];
+    this.vehicles[index].reset(x, y, psi, 0);
+    this.inContact[index] = false;
+    cs.gNow = 0;
     this.applyEffects(index);
   }
 
@@ -238,7 +263,26 @@ export class World {
     let any = false;
     this.bestW.fill(-1);
     this.bestD.fill(0);
-    for (let w = 0; w < nW; w++) {
+    // Kandidatenwände über das Raster einsammeln
+    const cand = this.candWalls;
+    let nc = 0;
+    const C = World.WCELL;
+    this.stamp++;
+    for (let gx = Math.floor(minx / C); gx <= Math.floor(maxx / C); gx++) {
+      for (let gy = Math.floor(miny / C); gy <= Math.floor(maxy / C); gy++) {
+        const list = this.wallGrid.get((gx + 2048) * 4096 + (gy + 2048));
+        if (!list) continue;
+        for (let q = 0; q < list.length; q++) {
+          const wi = list[q];
+          if (this.wallStamp[wi] !== this.stamp) {
+            this.wallStamp[wi] = this.stamp;
+            if (nc < cand.length) cand[nc++] = wi;
+          }
+        }
+      }
+    }
+    for (let ci = 0; ci < nc; ci++) {
+      const w = cand[ci];
       if (maxx < this.wMinX[w] || minx > this.wMaxX[w] || maxy < this.wMinY[w] || miny > this.wMaxY[w]) continue;
       const wl = walls[w];
       const depth = WALLS[wl.kind].depth;
@@ -424,6 +468,30 @@ export class World {
     const reach = 2 * HULL.radius + 0.2;
     if (Math.abs(A.x - Bv.x) > reach || Math.abs(A.y - Bv.y) > reach) return;
     if (Math.hypot(A.x - Bv.x, A.y - Bv.y) > reach) return;
+    // Bounding-Box von A im Rahmen von B gegen die Box von B
+    const ca = Math.cos(A.psi - Bv.psi);
+    const sa = Math.sin(A.psi - Bv.psi);
+    const dx = A.x - Bv.x;
+    const dy = A.y - Bv.y;
+    const cb = Math.cos(Bv.psi);
+    const sb = Math.sin(Bv.psi);
+    const cx = cb * dx + sb * dy;
+    const cy = -sb * dx + cb * dy;
+    let minX = 1e9;
+    let maxX = -1e9;
+    let minY = 1e9;
+    let maxY = -1e9;
+    for (let k = 0; k < 4; k++) {
+      const px = k & 1 ? 3.12 : -1.95;
+      const py = k & 2 ? 0.97 : -0.97;
+      const lx = cx + ca * px - sa * py;
+      const ly = cy + sa * px + ca * py;
+      if (lx < minX) minX = lx;
+      if (lx > maxX) maxX = lx;
+      if (ly < minY) minY = ly;
+      if (ly > maxY) maxY = ly;
+    }
+    if (maxX < -2.05 || minX > 3.2 || maxY < -1.05 || minY > 1.05) return;
     this.carPair(ia, ib, dt);
     this.carPair(ib, ia, dt);
   }
@@ -457,6 +525,7 @@ export class World {
       const dy = wy - Bv.y;
       const lx = cB * dx + sB * dy;
       const ly = -sB * dx + cB * dy;
+      if (lx < -2.05 || lx > 3.2 || ly < -1.05 || ly > 1.05) continue;
       if (!HULL.contains(lx, ly)) continue;
       // nächste Kante von B
       let best = Infinity;
@@ -628,8 +697,10 @@ export class World {
       cs.scrapeEnergy += v.scrapeWork;
       v.scrapeWork = 0;
     }
-    cs.evaluate();
-    this.applyEffects(vi);
+    if (cs.needsEvaluate()) {
+      cs.evaluate();
+      this.applyEffects(vi);
+    }
     this.spawnDebris(vi);
   }
 
@@ -681,7 +752,7 @@ export class World {
 
   // ---------------------------------------------------------------------------------------------
   /** Schreibt Zustand inkl. Schäden, Kontakten, Dellen und Körpern in den Snapshot. */
-  writeSnapshot(out: Float64Array, index = 0): void {
+  writeSnapshot(out: Float64Array, index = 0, withBodies = true): void {
     const v = this.vehicles[index];
     const cs = this.crash[index];
     v.writeSnapshot(out);
@@ -707,6 +778,17 @@ export class World {
     out.fill(0, S.contacts, S.contacts + MAX_CONTACTS * CONTACT_STRIDE);
     for (let k = 0; k < this.contactCount * CONTACT_STRIDE; k++) out[S.contacts + k] = this.contacts[k];
     for (let k = 0; k < MAX_DENTS * DENT_STRIDE; k++) out[S.dents + k] = cs.dents[k];
-    out[S.nBodies] = this.bodies.write(out, S.bodies);
+    if (withBodies) out[S.nBodies] = this.bodies.write(out, S.bodies);
+  }
+
+  private readonly tmp = new Float64Array(S.size + 4);
+
+  /** Schreibt einen kompakten Fahrzeugblock (Skalarfelder + Dellen) an `base`. */
+  writeCarBlock(out: Float64Array, base: number, index: number, before?: (tmp: Float64Array) => void): void {
+    const t = this.tmp;
+    this.writeSnapshot(t, index, false);
+    before?.(t);
+    for (let k = 0; k < S.contacts; k++) out[base + k] = t[k];
+    for (let k = 0; k < CAR_BLOCK_DENTS; k++) out[base + S.contacts + k] = t[S.dents + k];
   }
 }

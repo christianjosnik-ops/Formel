@@ -1,8 +1,11 @@
 /// <reference lib="webworker" />
 import { TEST_CAR_2026 } from '../config/car';
+import { carConfigFor } from '../race/field';
+import { RaceDirector, selectField, type RaceConfig } from '../race/race';
+import type { GameMap } from '../world/maps';
 import { PHYS } from '../config/physics';
 import type { FromWorker, ToWorker } from './messages';
-import { SNAP_SIZE, S } from './layout';
+import { CAR_BLOCK, SNAP_SIZE, S } from './layout';
 import { Vehicle } from './vehicle';
 import { World } from './world';
 import { createMap } from '../world/maps';
@@ -13,8 +16,11 @@ import { createMap } from '../world/maps';
  * kein SharedArrayBuffer nötig, daher ohne COOP/COEP-Header auf GitHub Pages lauffähig).
  */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
-const car = new Vehicle(TEST_CAR_2026);
+let car = new Vehicle(structuredClone(TEST_CAR_2026));
 let world: World | null = null;
+let director: RaceDirector | null = null;
+let curMap: GameMap | null = null;
+let playerInput = { ...car.input };
 const pool: Float64Array[] = [];
 let paused = false;
 let acc = 0;
@@ -23,9 +29,31 @@ let stepMsAvg = 0.05;
 let hzAvg = PHYS.hz;
 let lastPost = 0;
 
+function build(race?: RaceConfig): void {
+  const map = curMap!;
+  const n = race ? selectField(race).length : 1;
+  const vs: Vehicle[] = [];
+  for (let k = 0; k < n; k++) vs.push(new Vehicle(k === 0 ? structuredClone(TEST_CAR_2026) : carConfigFor()));
+  car = vs[0];
+  Object.assign(car.input, playerInput);
+  world = new World(map.world, vs);
+  if (race) director = new RaceDirector(world, map, race);
+  else {
+    director = null;
+    world.reset(0, map.start.x, map.start.y, map.start.psi, 0);
+  }
+  acc = 0;
+}
+
 function post(): void {
   const buf = pool.pop() ?? new Float64Array(SNAP_SIZE);
   world!.writeSnapshot(buf, 0);
+  if (director) {
+    director.writeRace(buf, 0, 0);
+    const n = director.entrants.length;
+    buf[S.nCars] = n;
+    for (let k = 0; k < n; k++) world!.writeCarBlock(buf, S.cars + k * CAR_BLOCK, k, (t) => director!.writeRace(t, 0, k));
+  } else buf[S.nCars] = 0;
   buf[S.stepMs] = stepMsAvg;
   buf[S.hz] = hzAvg;
   const msg: FromWorker = { type: 'snap', buf };
@@ -45,6 +73,7 @@ function tick(): void {
     let steps = 0;
     const t0 = performance.now();
     while (acc >= dt && steps < PHYS.maxCatchUpSteps) {
+      director?.update(dt);
       world.step(dt);
       acc -= dt;
       steps++;
@@ -70,15 +99,18 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   switch (m.type) {
     case 'init': {
-      const map = createMap(m.map);
-      world = new World(map.world, [car]);
-      world.reset(0, map.start.x, map.start.y, map.start.psi, 0);
+      curMap = createMap(m.map);
+      build(m.race);
       const ready: FromWorker = { type: 'ready', hz: PHYS.hz };
       ctx.postMessage(ready);
       break;
     }
+    case 'restart':
+      build(m.race);
+      break;
     case 'input':
-      Object.assign(car.input, m.input);
+      Object.assign(playerInput, m.input);
+      Object.assign(car.input, director && director.state === 'grid' ? { ...m.input, throttle: 0, brake: 1 } : m.input);
       break;
     case 'reset':
       world?.reset(0, m.x, m.y, m.psi, m.speed);

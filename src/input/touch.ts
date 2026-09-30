@@ -67,6 +67,32 @@ export function setupTouchPads(controls: Controls): void {
   pedal(gasPad, gasFill, (v) => (controls.touchThrottle = v));
   pedal(brakePad, brakeFill, (v) => (controls.touchBrake = v));
 
+  // Pfeiltasten (rechts): digitale Lenkung mit Rampe, beide gedrückt = geradeaus
+  let arrowL = 0;
+  let arrowR = 0;
+  const arrow = (id: string, set: (v: number) => void) => {
+    const el = document.getElementById(id)!;
+    const ids = new Set<number>();
+    el.addEventListener('pointerdown', (e) => {
+      ids.add(e.pointerId);
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('on');
+      set(1);
+      e.preventDefault();
+    });
+    const up = (e: PointerEvent) => {
+      ids.delete(e.pointerId);
+      if (ids.size === 0) {
+        el.classList.remove('on');
+        set(0);
+      }
+    };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+  arrow('btnLeft', (v) => (arrowL = v));
+  arrow('btnRight', (v) => (arrowR = v));
+
   // Sanfte Glättung/Federung des Lenkwerts + Knopfdarstellung
   let cur = 0;
   let last = performance.now();
@@ -74,8 +100,16 @@ export function setupTouchPads(controls: Controls): void {
     const now = performance.now();
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const rate = steerId === -1 ? 9 : 28;
-    cur += (steerTarget - cur) * Math.min(1, dt * rate);
+    if (document.body.classList.contains('arrows')) {
+      const dir = arrowL - arrowR; // links = positiv
+      if (dir !== 0) {
+        const step = (Math.sign(dir) !== Math.sign(cur) && cur !== 0 ? 7 : 2.6) * dt;
+        cur += Math.sign(dir - cur) * Math.min(Math.abs(dir - cur), step);
+      } else cur -= Math.sign(cur) * Math.min(Math.abs(cur), 5.5 * dt);
+    } else {
+      const rate = steerId === -1 ? 9 : 28;
+      cur += (steerTarget - cur) * Math.min(1, dt * rate);
+    }
     controls.touchSteer = cur;
     steerKnob.style.left = `${50 - cur * 44}%`;
     requestAnimationFrame(loop);

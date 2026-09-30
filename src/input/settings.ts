@@ -1,6 +1,6 @@
 export interface Settings {
   map: 'proving' | 'monza' | 'spa' | 'silverstone';
-  control: 'touch' | 'tilt';
+  control: 'arrows' | 'touch' | 'tilt';
   tc: number;
   abs: number;
   steerAssist: number;
@@ -13,13 +13,21 @@ export interface Settings {
   tiltRange: number;
   tiltInvert: boolean;
   quality: 'auto' | 'high' | 'low';
+  mode: 'race' | 'free';
+  laps: number;
+  /** -1 = keine KI, sonst Index in AI_LEVELS. */
+  aiLevel: number;
+  grid: 'pole' | 'mid' | 'last' | 'random';
+  /** Index in der Fahrerliste (race/field DRIVERS). */
+  driver: number;
+  field: number;
 }
 
-const KEY = 'formel.settings.v1';
+const KEY = 'formel.settings.v2';
 
 export const DEFAULTS: Settings = {
   map: 'monza',
-  control: 'touch',
+  control: 'arrows',
   tc: 1,
   abs: 1,
   steerAssist: 1,
@@ -31,6 +39,12 @@ export const DEFAULTS: Settings = {
   tiltRange: 38,
   tiltInvert: false,
   quality: 'auto',
+  mode: 'race',
+  laps: 3,
+  aiLevel: 1,
+  grid: 'mid',
+  driver: 0,
+  field: 22,
 };
 
 export function loadSettings(): Settings {

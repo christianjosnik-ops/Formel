@@ -2,7 +2,8 @@ import './style.css';
 import * as THREE from 'three';
 import { TEST_CAR_2026 } from './config/car';
 import teams from './data/teams.json';
-import drivers from './data/drivers.json';
+import { DRIVERS, teamOf } from './race/field';
+import type { RaceConfig } from './race/race';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -20,6 +21,8 @@ import { createMap } from './world/maps';
 import { LapTimer } from './ui/lap';
 import { Hud } from './ui/hud';
 import { setupMenu } from './ui/menu';
+import { setupStart } from './ui/start';
+import { RaceHud } from './ui/race';
 
 const settings = loadSettings();
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -56,7 +59,7 @@ function buildCar(): void {
     car.dispose();
   }
   const team = teams.find((t) => t.id === settings.team) ?? teams[0];
-  const driver = drivers.find((d) => d.team === team.id) ?? drivers[0];
+  const driver = settings.mode === 'race' ? DRIVERS[settings.driver] ?? DRIVERS[0] : DRIVERS.find((d) => d.team === team.id) ?? DRIVERS[0];
   const livery: Livery = {
     primary: team.colors.primary,
     secondary: team.colors.secondary,
@@ -75,8 +78,114 @@ function buildCar(): void {
 }
 const rig = new CameraRig(camera, canvas);
 buildCar();
-rig.setMode(settings.camera, car);
-document.body.classList.toggle('showroom', settings.camera === 'showroom');
+// Bis zum Start zeigt die Kamera das Auto im Showroom
+rig.setMode('showroom', car);
+document.body.classList.add('showroom');
+const raceHud = new RaceHud();
+
+// ---------------------------------------------------------------- KI-Autos
+const aiModels: (CarModel | undefined)[] = [];
+function clearAi(): void {
+  for (const m of aiModels) {
+    if (!m) continue;
+    scene.remove(m.root);
+    m.dispose();
+  }
+  aiModels.length = 0;
+}
+function makeAi(v: Float64Array): CarModel {
+  const d = DRIVERS[v[S.raceDriver] | 0] ?? DRIVERS[0];
+  const t = teamOf(d);
+  const m = new CarModel(
+    TEST_CAR_2026,
+    { primary: t.colors.primary, secondary: t.colors.secondary, accent: t.colors.accent, number: d.number, helmet: d.helmet, teamName: t.name, engineName: t.engine, compound: 'medium' },
+    assets,
+  );
+  m.root.traverse((o) => (o.castShadow = false));
+  scene.add(m.root);
+  return m;
+}
+function updateAi(dt: number, s: Float64Array): void {
+  const n = physics.carCount;
+  if (n <= 1) {
+    if (aiModels.length) clearAi();
+    return;
+  }
+  for (let k = 1; k < n; k++) {
+    const v = physics.carView(k);
+    if (!v) continue;
+    const m = (aiModels[k] ??= makeAi(v));
+    const dx = v[S.x] - s[S.x];
+    const dy = v[S.y] - s[S.y];
+    const near = dx * dx + dy * dy < 450 * 450;
+    m.root.visible = near;
+    if (near) m.update(v, dt);
+  }
+}
+
+function raceConfig(): RaceConfig {
+  return {
+    laps: settings.laps,
+    aiLevel: Math.max(0, settings.aiLevel),
+    playerDriver: settings.driver,
+    field: settings.aiLevel < 0 ? 1 : settings.field,
+    grid: settings.grid,
+    seed: (Date.now() & 0xffff) + 1,
+  };
+}
+function applyControlClass(): void {
+  document.body.classList.toggle('arrows', settings.control === 'arrows');
+  document.body.classList.toggle('tilt', settings.control === 'tilt');
+}
+function startGame(): void {
+  const race = settings.mode === 'race';
+  if (race) settings.team = teamOf(DRIVERS[settings.driver] ?? DRIVERS[0]).id;
+  applyControlClass();
+  buildCar();
+  clearAi();
+  physics.restart(race ? raceConfig() : undefined);
+  physics.setBrakeBias(settings.brakeBias);
+  raceHud.setActive(race);
+  if (race) {
+    settings.telemetry = false;
+    hud.setTelemetryVisible(false);
+    (document.getElementById('chkTelemetry') as HTMLInputElement).checked = false;
+  }
+  lapTimer.reset(0);
+  const cam = settings.camera === 'showroom' ? 'chase' : settings.camera;
+  rig.setMode(cam, car);
+  document.body.classList.remove('showroom');
+  (document.getElementById('selTeam') as HTMLSelectElement).value = settings.team;
+}
+const start = setupStart(settings, (mapChanged) => {
+  if (mapChanged) {
+    try {
+      sessionStorage.setItem('formel.autostart', '1');
+    } catch {
+      /* ignorieren */
+    }
+    location.reload();
+  } else startGame();
+});
+raceHud.onAgain = startGame;
+raceHud.onMenu = () => {
+  raceHud.setActive(false);
+  clearAi();
+  physics.restart(undefined);
+  rig.setMode('showroom', car);
+  document.body.classList.add('showroom');
+  start.show();
+};
+applyControlClass();
+let autostart = false;
+try {
+  autostart = sessionStorage.getItem('formel.autostart') === '1';
+  sessionStorage.removeItem('formel.autostart');
+} catch {
+  /* ignorieren */
+}
+if (autostart) document.getElementById('start')!.classList.add('hidden');
+else start.show();
 
 const menu = setupMenu(settings, controls, {
   onTeamChanged: buildCar,
@@ -94,6 +203,13 @@ const menu = setupMenu(settings, controls, {
 document.getElementById('buildInfo')!.textContent = `Build ${__BUILD__}`;
 
 const resetCar = () => {
+  if (physics.carCount > 0 && gameMap.track) {
+    // Rennen: Streckenposten setzt das Auto an der aktuellen Stelle zurück auf die Strecke
+    const t = gameMap.track;
+    const i = t.nearest(physics.out[S.x], physics.out[S.y]);
+    if (i >= 0) physics.reset(t.x[i], t.y[i], t.hdg[i], 0);
+    return;
+  }
   physics.reset(gameMap.start.x, gameMap.start.y, gameMap.start.psi, 0);
   lapTimer.reset(0);
 };
@@ -161,6 +277,8 @@ function frame(now: number): void {
   if (physics.sample()) {
     const s = physics.out;
     car.update(s, dt);
+    updateAi(dt, s);
+    raceHud.update(physics, dt);
     rig.update(s, dt, car);
     visuals.updateCones(s);
     debris?.update(s);
@@ -186,6 +304,7 @@ function frame(now: number): void {
     if (!loaded) {
       loaded = true;
       document.getElementById('loading')!.classList.add('gone');
+      if (autostart) startGame();
     }
   }
   renderer.render(scene, camera);

@@ -1,5 +1,6 @@
 import type { FromWorker, ToWorker } from './messages';
-import { BODY_STRIDE, MAX_BODIES, SNAP_SIZE, S } from './layout';
+import { BODY_STRIDE, CAR_BLOCK, CAR_BLOCK_DENTS, MAX_BODIES, SNAP_SIZE, S } from './layout';
+import type { RaceConfig } from '../race/race';
 import type { MapId } from '../world/maps';
 import type { DriverInput } from './vehicle';
 
@@ -18,9 +19,14 @@ export class PhysicsClient {
   private haveOffset = false;
   private readonly delay = 0.022;
 
-  constructor(mapId: MapId) {
+  private readonly views: Float64Array[] = [];
+  private sa: Float64Array | null = null;
+  private sb: Float64Array | null = null;
+  private st = 0;
+
+  constructor(mapId: MapId, race?: RaceConfig) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.send({ type: 'init', map: mapId });
+    this.send({ type: 'init', map: mapId, race });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => {
       const m = e.data;
       if (m.type === 'ready') {
@@ -57,6 +63,9 @@ export class PhysicsClient {
   reset(x = 0, y = 0, psi = 0, speed = 0): void {
     this.send({ type: 'reset', x, y, psi, speed });
   }
+  restart(race?: RaceConfig): void {
+    this.send({ type: 'restart', race });
+  }
   repair(): void {
     this.send({ type: 'repair' });
   }
@@ -74,6 +83,8 @@ export class PhysicsClient {
     const out = this.out;
     if (n === 1) {
       out.set(this.ring[0]);
+      this.sa = this.sb = this.ring[0];
+      this.st = 1;
       return true;
     }
     const tRender = performance.now() / 1000 + this.offset - this.delay;
@@ -82,6 +93,8 @@ export class PhysicsClient {
     // tRender liegt zwischen ring[i-1] und ring[i]  (i >= 1) oder vor/nach dem Ring
     if (i === 0) {
       out.set(this.ring[0]);
+      this.sa = this.sb = this.ring[0];
+      this.st = 1;
       return true;
     }
     const a = this.ring[i - 1];
@@ -90,6 +103,9 @@ export class PhysicsClient {
     let t = span > 1e-6 ? (tRender - a[S.time]) / span : 1;
     if (t > 1.5) t = 1.5;
     if (t < 0) t = 0;
+    this.sa = a;
+    this.sb = b;
+    this.st = t;
     // Skalare Felder (bis zu den Kontakten) interpolieren; Kontakte, Dellen, Körper vom neueren Snapshot
     const nScalar = S.contacts;
     for (let k = 0; k < nScalar; k++) out[k] = a[k] + (b[k] - a[k]) * t;
@@ -123,6 +139,30 @@ export class PhysicsClient {
     out[S.crashLevel] = b[S.crashLevel];
     out[S.nBodies] = b[S.nBodies];
     return true;
+  }
+
+  /** Anzahl Autos im Rennen (0 = Freies Fahren). */
+  get carCount(): number {
+    return this.sb ? this.sb[S.nCars] | 0 : 0;
+  }
+
+  /** Interpolierter Zustand des k-ten Autos in der Indexierung des Snapshots (für CarModel/Anzeige). */
+  carView(k: number): Float64Array | null {
+    const a = this.sa;
+    const b = this.sb;
+    if (!a || !b || k >= (b[S.nCars] | 0)) return null;
+    let v = this.views[k];
+    if (!v) v = this.views[k] = new Float64Array(SNAP_SIZE);
+    const base = S.cars + k * CAR_BLOCK;
+    const t = this.st;
+    for (let q = 0; q < S.contacts; q++) v[q] = a[base + q] + (b[base + q] - a[base + q]) * t;
+    for (let q = 0; q < CAR_BLOCK_DENTS; q++) v[S.dents + q] = b[base + S.contacts + q];
+    let dpsi = b[base + S.psi] - a[base + S.psi];
+    dpsi -= Math.round(dpsi / (2 * Math.PI)) * 2 * Math.PI;
+    v[S.psi] = a[base + S.psi] + dpsi * t;
+    for (const f of [S.gear, S.absActive, S.tcActive, S.retired, S.crashLevel, S.raceLap, S.racePos, S.raceFinished, S.raceOut, S.raceDriver, S.raceBest, S.raceLast, S.raceState, S.raceLights, S.raceLaps, S.raceFinishTime, S.raceGapLeader, S.raceGapAhead, S.raceGapBehind])
+      v[f] = b[base + f];
+    return v;
   }
 
   /** Letzter roher Snapshot (für Telemetrie ohne Interpolation). */

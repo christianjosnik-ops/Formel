@@ -32,6 +32,7 @@ export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHoo
 
   const applyBody = () => {
     document.body.classList.toggle('tilt', settings.control === 'tilt');
+    document.body.classList.toggle('arrows', settings.control === 'arrows');
     $('rowTilt').style.display = settings.control === 'tilt' ? '' : 'none';
   };
 

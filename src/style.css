@@ -147,3 +147,57 @@ body.showroom #damage { display: none; }
 #minimap { position: absolute; left: calc(10px + var(--safe-l)); bottom: calc(184px + var(--safe-b)); width: 170px; height: 120px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px solid var(--line); }
 body.showroom #minimap, body.showroom #lap { display: none; }
 @media (max-height: 520px) { #minimap { width: 130px; height: 92px; bottom: calc(150px + var(--safe-b)); } #lapTime { font-size: 20px; } }
+
+/* ---- Pfeiltasten-Steuerung: Gas/Bremse links, Lenkpfeile rechts ---- */
+#arrowPad { position: absolute; right: calc(14px + var(--safe-r)); bottom: calc(14px + var(--safe-b)); display: none; gap: 14px; pointer-events: none; }
+.arrowBtn { pointer-events: auto; touch-action: none; width: min(19vw, 150px); height: min(34vh, 190px); font-size: 46px; border-radius: 26px; background: rgba(255,255,255,.1); border: 1px solid var(--line); color: rgba(255,255,255,.85); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); padding: 0; }
+.arrowBtn.on { background: rgba(77,160,255,.45); }
+body.arrows #arrowPad { display: flex; }
+body.arrows #steerPad { display: none; }
+body.arrows #brakePad { left: calc(14px + var(--safe-l)); right: auto; }
+body.arrows #gasPad { left: calc(min(13vw, 120px) + 26px + var(--safe-l)); right: auto; }
+body.arrows #aeroBtn { right: calc(14px + var(--safe-r)); bottom: calc(min(34vh, 190px) + 26px + var(--safe-b)); }
+body.arrows #minimap { bottom: calc(min(46vh, 290px) + 24px + var(--safe-b)); }
+body.arrows #bars { display: none; }
+body.showroom #arrowPad { display: none; }
+@media (max-width: 760px) { .arrowBtn { width: 24vw; height: 30vh; font-size: 38px; } body.arrows #aeroBtn { bottom: calc(30vh + 26px + var(--safe-b)); } }
+
+/* ---- Rennen-HUD ---- */
+#race { position: fixed; inset: 0; pointer-events: none; z-index: 3; font-variant-numeric: tabular-nums; }
+#race.hidden { display: none; }
+#raceInfo { position: absolute; top: calc(8px + var(--safe-t)); left: 50%; transform: translateX(-50%); display: flex; gap: 14px; font-weight: 700; letter-spacing: 1px; font-size: 15px; background: var(--glass); border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px; }
+#board { position: absolute; left: calc(8px + var(--safe-l)); top: calc(46px + var(--safe-t)); background: rgba(8,10,14,.66); border: 1px solid var(--line); border-radius: 10px; padding: 4px; font-size: 11px; line-height: 1.25; width: 168px; }
+#board .row { display: grid; grid-template-columns: 18px 4px 34px 1fr; gap: 5px; align-items: center; padding: 1px 4px; border-radius: 4px; height: 17px; }
+#board .row.me { background: rgba(255,255,255,.22); font-weight: 700; }
+#board .row.out { opacity: .4; }
+#board .bar { width: 4px; height: 12px; border-radius: 2px; }
+#board .gap { text-align: right; color: #d7e3f4; }
+#board .gap small { color: #8fa3bd; margin-left: 4px; }
+#board .sep { text-align: center; color: #667; height: 8px; line-height: 6px; }
+#lights { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); display: none; gap: 12px; background: rgba(0,0,0,.55); padding: 12px 16px; border-radius: 16px; }
+#lights.show { display: flex; }
+#lights i { width: 34px; height: 34px; border-radius: 50%; background: #2a0b0b; border: 2px solid #111; }
+#lights i.on { background: #ff1c1c; box-shadow: 0 0 18px #ff2a2a; }
+#banner { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 44px; font-weight: 800; letter-spacing: 3px; text-shadow: 0 4px 18px rgba(0,0,0,.7); text-align: center; }
+#results { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 8; width: min(92vw, 520px); max-height: 88vh; overflow: auto; padding: 14px; }
+#results h2 { margin: 0 0 8px; }
+#results .rrow { display: grid; grid-template-columns: 26px 5px 1fr 82px 70px; gap: 6px; padding: 2px 0; font-size: 13px; align-items: center; }
+#results .rrow.me { background: rgba(255,255,255,.18); font-weight: 700; }
+#results .rrow .bar { width: 5px; height: 14px; border-radius: 2px; }
+#results .rrow span:nth-child(n+4) { text-align: right; }
+.resBtns { display: flex; gap: 10px; margin-top: 10px; }
+.resBtns button { flex: 1; padding: 10px; font-size: 15px; }
+@media (max-height: 520px) { #board { top: calc(40px + var(--safe-t)); font-size: 10px; width: 150px; } #board .row { height: 15px; } #banner { font-size: 30px; } }
+body.showroom #race { display: none; }
+
+/* ---- Startbildschirm ---- */
+#start { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-start; justify-content: center; background: radial-gradient(ellipse at center, rgba(10,14,22,.6), rgba(5,7,10,.92)); overflow: auto; padding: 10px; }
+#start.hidden { display: none; }
+.startBox { margin: auto; width: min(94vw, 560px); padding: 18px; background: rgba(14,18,26,.92); border: 1px solid var(--line); border-radius: 20px; }
+.startTitle { font-size: 28px; font-weight: 800; letter-spacing: 6px; text-align: center; margin-bottom: 12px; }
+.startGrid { display: grid; grid-template-columns: 130px 1fr; gap: 8px 10px; align-items: center; font-size: 14px; }
+.startGrid select { width: 100%; padding: 8px; font-size: 14px; background: #1b2230; color: #fff; border: 1px solid var(--line); border-radius: 8px; }
+.startGrid .hide { display: none; }
+#stGo { width: 100%; margin-top: 14px; padding: 14px; font-size: 20px; font-weight: 800; letter-spacing: 4px; background: #e10600; color: #fff; border: 0; border-radius: 12px; }
+#stHint { margin-top: 8px; text-align: center; font-size: 12px; }
+@media (max-height: 520px) { .startBox { padding: 8px 12px; } .startTitle { font-size: 18px; margin-bottom: 6px; } .startGrid { gap: 4px 8px; font-size: 12px; } .startGrid select { padding: 4px; } #stGo { padding: 8px; margin-top: 8px; } }
