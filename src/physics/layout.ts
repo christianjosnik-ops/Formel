@@ -93,6 +93,12 @@ export const S = {
   raceTime: one(), // Rennzeit seit Start [s]
   raceLaps: one(), // Rundenzahl des Rennens
   raceFinishTime: one(),
+  pitState: one(), // 0 keiner, 1 angefordert, 2 Boxengasse, 3 Reifenwechsel, 4 Ausfahrt
+  pitTimer: one(), // verbleibende Standzeit [s]
+  pitStops: one(),
+  pitBoxS: one(), // Position der eigenen Box [m relativ zur Startlinie]
+  pitLimiter: one(), // 1 = Geschwindigkeitsbegrenzer aktiv
+  pitNext: one(), // gewählte Mischung (Index)
   wallContact: one(), // Anzahl Kontaktpunkte mit Wand/Fremdkörpern
   contacts: 0, // Anfang des Kontaktfeldes (MAX_CONTACTS * CONTACT_STRIDE)
   dents: 0, // Anfang des Dellenfeldes (MAX_DENTS * DENT_STRIDE)

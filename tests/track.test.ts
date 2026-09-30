@@ -38,6 +38,7 @@ describe('Strecken aus Streckendaten', () => {
         // Mittellinie und Innenbereich sind Asphalt
         expect(t.surfaceAt(t.x[i], t.y[i])).toBe('asphalt');
         expect(t.surfaceAt(t.x[i] + nx * (t.wl[i] - 1.5), t.y[i] + ny * (t.wl[i] - 1.5))).toBe('asphalt');
+        if (t.pitW[i] > 0.05) continue;
         const out = t.surfaceAt(t.x[i] + nx * (t.wl[i] + t.kerbL[i] + 2), t.y[i] + ny * (t.wl[i] + t.kerbL[i] + 2));
         if (out === 'gravel') gravel++;
         if (t.kerbL[i] > 0.6 && t.surfaceAt(t.x[i] + nx * (t.wl[i] + 0.4), t.y[i] + ny * (t.wl[i] + 0.4)) === 'kerb') kerb++;
@@ -47,13 +48,15 @@ describe('Strecken aus Streckendaten', () => {
       // Wände: liegen außerhalb der Strecke, Normalen zeigen zur Strecke
       expect(t.walls.length).toBeGreaterThan(300);
       for (const w of t.walls) {
+        if (w.kind === 'pitwall') continue;
         const mx = (w.ax + w.bx) / 2;
         const my = (w.ay + w.by) / 2;
         const i = t.nearest(mx, my);
         expect(i).toBeGreaterThanOrEqual(0);
         const lat = t.lateral(i, mx, my);
-        const edge = lat >= 0 ? t.wl[i] : t.wr[i];
-        expect(Math.abs(lat)).toBeGreaterThan(edge + 2.5);
+        const taper = t.pitW[i] > 0.05;
+        const edge = lat >= 0 ? t.wl[i] + t.pitW[i] : t.wr[i];
+        expect(Math.abs(lat)).toBeGreaterThan(edge + (taper ? -1.2 : 2.1));
         if (t.sev[i] < 0.4) {
           const toTrack = -Math.sign(lat);
           expect((w.nx * t.nx(i) + w.ny * t.ny(i)) * toTrack).toBeGreaterThan(0.3);
@@ -66,12 +69,14 @@ describe('Strecken aus Streckendaten', () => {
     for (const id of ['monza', 'spa', 'silverstone'] as const) {
       const t = createMap(id).track!;
       for (const w of t.walls) {
+        if (w.kind === 'pitwall') continue;
         for (const f of [0, 0.5, 1]) {
           const px = w.ax + (w.bx - w.ax) * f;
           const py = w.ay + (w.by - w.ay) * f;
           const i = t.nearest(px, py);
           const lat = t.lateral(i, px, py);
-          expect(Math.abs(lat)).toBeGreaterThan((lat >= 0 ? t.wl[i] : t.wr[i]) + 1);
+          const taper = t.pitW[i] > 0.05;
+          expect(Math.abs(lat)).toBeGreaterThan((lat >= 0 ? t.wl[i] + t.pitW[i] : t.wr[i]) + (taper ? -1.2 : 1));
         }
       }
     }

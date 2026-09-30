@@ -1,6 +1,8 @@
 import type { FromWorker, ToWorker } from './messages';
 import { BODY_STRIDE, CAR_BLOCK, CAR_BLOCK_DENTS, MAX_BODIES, SNAP_SIZE, S } from './layout';
 import type { RaceConfig } from '../race/race';
+import type { CompoundId } from '../config/tyres';
+import type { Upgrades } from '../career';
 import type { MapId } from '../world/maps';
 import type { DriverInput } from './vehicle';
 
@@ -24,9 +26,9 @@ export class PhysicsClient {
   private sb: Float64Array | null = null;
   private st = 0;
 
-  constructor(mapId: MapId, race?: RaceConfig) {
+  constructor(mapId: MapId, race?: RaceConfig, upgrades?: Upgrades) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.send({ type: 'init', map: mapId, race });
+    this.send({ type: 'init', map: mapId, race, upgrades });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => {
       const m = e.data;
       if (m.type === 'ready') {
@@ -63,8 +65,11 @@ export class PhysicsClient {
   reset(x = 0, y = 0, psi = 0, speed = 0): void {
     this.send({ type: 'reset', x, y, psi, speed });
   }
-  restart(race?: RaceConfig): void {
-    this.send({ type: 'restart', race });
+  restart(race?: RaceConfig, upgrades?: Upgrades): void {
+    this.send({ type: 'restart', race, upgrades });
+  }
+  pit(request: boolean, compound: CompoundId): void {
+    this.send({ type: 'pit', request, compound });
   }
   repair(): void {
     this.send({ type: 'repair' });

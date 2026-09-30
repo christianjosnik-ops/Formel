@@ -7,6 +7,8 @@ export const CAMERA_MODES: CameraMode[] = ['chase', 'tcam', 'cockpit', 'nose', '
 
 export class CameraRig {
   mode: CameraMode = 'chase';
+  /** Geländehöhe unter dem Auto [m] (Strecken mit Höhenprofil). */
+  groundY = 0;
   private yaw = 0;
   private yawInit = false;
   private readonly pos = new THREE.Vector3();
@@ -214,6 +216,10 @@ export class CameraRig {
     if (Math.abs(cam.fov - this.fov) > 0.05) {
       cam.fov = this.fov;
       cam.updateProjectionMatrix();
+    }
+    if (this.mode === 'chase' || this.mode === 'tv' || this.mode === 'side' || this.mode === 'heli' || this.mode === 'showroom') {
+      this.pos.y += this.groundY;
+      this.look.y += this.groundY;
     }
     cam.position.copy(this.pos);
     cam.lookAt(this.look);

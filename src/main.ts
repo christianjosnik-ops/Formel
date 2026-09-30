@@ -7,6 +7,8 @@ import { AI_LEVELS, driverPace } from './race/field';
 import { RacingLine } from './race/line';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
+import { COMPOUND_ORDER } from './config/tyres';
+import { loadCareer, prize, saveCareer } from './career';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -47,7 +49,8 @@ const effects = new Effects(scene, worldMap);
 let debris: DebrisRenderer | null = null;
 const lapTimer = new LapTimer(gameMap.track);
 
-const physics = new PhysicsClient(settings.map);
+const career = loadCareer();
+const physics = new PhysicsClient(settings.map, undefined, career.up);
 const controls = new Controls(settings);
 setupTouchPads(controls);
 const hud = new Hud();
@@ -118,11 +121,24 @@ function updateAi(dt: number, s: Float64Array): void {
     const v = physics.carView(k);
     if (!v) continue;
     const m = (aiModels[k] ??= makeAi(v));
+    if (m.lastCompound !== (v[S.compound] | 0)) {
+      m.lastCompound = v[S.compound] | 0;
+      m.setCompound(COMPOUND_ORDER[m.lastCompound] ?? 'medium');
+    }
     const dx = v[S.x] - s[S.x];
     const dy = v[S.y] - s[S.y];
     const near = dx * dx + dy * dy < 450 * 450;
     m.root.visible = near;
-    if (near) m.update(v, dt);
+    if (near) {
+      let g = 0;
+      let tl = 0;
+      if (gameMap.track) {
+        g = gameMap.track.heightAt(v[S.x], v[S.y]);
+        gameMap.track.slopeAt(v[S.x], v[S.y], slopeTmp);
+        tl = Math.atan(slopeTmp[0] * Math.cos(v[S.psi]) + slopeTmp[1] * Math.sin(v[S.psi]));
+      }
+      m.update(v, dt, g, tl);
+    }
   }
 }
 
@@ -134,6 +150,8 @@ function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
     field: settings.aiLevel < 0 ? 1 : settings.field,
     grid: settings.grid,
     seed: (Date.now() & 0xffff) + 1,
+    wearScale: settings.wear,
+    startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
     ...over,
   };
 }
@@ -168,7 +186,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
   physics.setBrakeBias(settings.brakeBias);
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
   document.body.classList.toggle('race', race);
@@ -187,13 +205,19 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
 function startGame(): void {
   launch(settings.mode === 'weekend' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
 }
+raceHud.onFinish = (pos, n, dnf) => {
+  const win = prize(pos, n, settings.laps, settings.aiLevel, dnf);
+  career.money += win;
+  saveCareer(career);
+  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €`;
+};
 raceHud.onQuali = (best) => {
   const cfg = raceConfig();
   const g = qualiGrid(cfg, best);
   const pos = g.rows.findIndex((r) => r.me) + 1;
   raceHud.showTable(`Qualifying – Startplatz ${pos}`, g.rows, 'Weiter zum Rennen', () => launch('race', { gridOrder: g.order }));
 };
-const start = setupStart(settings, (mapChanged) => {
+const start = setupStart(settings, career, (mapChanged) => {
   if (mapChanged) {
     try {
       sessionStorage.setItem('formel.autostart', '1');
@@ -208,7 +232,7 @@ raceHud.onMenu = () => {
   raceHud.setActive(false);
   document.body.classList.remove('race');
   clearAi();
-  physics.restart(undefined);
+  physics.restart(undefined, career.up);
   rig.setMode('showroom', car);
   document.body.classList.add('showroom');
   start.show();
@@ -292,6 +316,7 @@ applyQuality();
 
 // ---------------------------------------------------------------- Hauptschleife
 const input = newInput();
+const slopeTmp = new Float64Array(2);
 const speedFx = document.getElementById('speedfx')!;
 let last = performance.now();
 let fpsAcc = 0;
@@ -320,7 +345,22 @@ function frame(now: number): void {
 
   if (physics.sample()) {
     const s = physics.out;
-    car.update(s, dt);
+    if (car.lastCompound !== (s[S.compound] | 0)) {
+      car.lastCompound = s[S.compound] | 0;
+      car.setCompound(COMPOUND_ORDER[car.lastCompound] ?? 'medium');
+    }
+    const trk = gameMap.track;
+    let ground = 0;
+    let tilt = 0;
+    if (trk) {
+      ground = trk.heightAt(s[S.x], s[S.y]);
+      trk.slopeAt(s[S.x], s[S.y], slopeTmp);
+      tilt = Math.atan(slopeTmp[0] * Math.cos(s[S.psi]) + slopeTmp[1] * Math.sin(s[S.psi]));
+    }
+    rig.groundY = ground;
+    effects.groundY = ground;
+    if (debris) debris.groundY = ground;
+    car.update(s, dt, ground, tilt);
     updateAi(dt, s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);

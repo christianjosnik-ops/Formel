@@ -31,7 +31,7 @@ export interface SurfaceRect {
   y1: number;
 }
 
-export type WallKind = 'concrete' | 'tire' | 'armco';
+export type WallKind = 'concrete' | 'tire' | 'armco' | 'pitwall';
 
 export interface WallParams {
   /** Steifigkeit je Meter Wandlänge [N/m pro m]. */
@@ -56,6 +56,8 @@ export const WALLS: Record<WallKind, WallParams> = {
   concrete: { stiffness: 1e10, yieldPerM: Infinity, stroke: 0, softStart: 1, zeta: 0.5, unload: 0.4, mu: 0.32, depth: 3 },
   // Reifenbarriere: progressiv (anfangs 30 % der Fließkraft, am Wegende 100 %), danach hart
   tire: { stiffness: 1.0e6, yieldPerM: 520e3, stroke: 2.6, softStart: 0.3, zeta: 0.85, unload: 0.12, mu: 0.75, depth: 4 },
+  // Boxenmauer: dünn, beidseitig wirksam (kurze Tiefe, damit Autos auf der Gegenseite nicht erfasst werden)
+  pitwall: { stiffness: 1e10, yieldPerM: Infinity, stroke: 0, softStart: 1, zeta: 0.5, unload: 0.4, mu: 0.32, depth: 0.45 },
   armco: { stiffness: 2.2e6, yieldPerM: 230e3, stroke: 0.45, softStart: 0.6, zeta: 0.6, unload: 0.2, mu: 0.4, depth: 2 },
 };
 
@@ -80,6 +82,8 @@ export interface World2D {
   surfaces: SurfaceRect[];
   /** Optional: berechnete Untergrundkarte (Strecken). Hat Vorrang vor `surfaces`. */
   surfaceFn?: (x: number, y: number) => SurfaceKind;
+  /** Optional: Geländegradient (dh/dx, dh/dy) für die Hangabtriebskraft. */
+  slopeFn?: (x: number, y: number, out: Float64Array) => void;
   walls: WallDef[];
   cones: ConeDef[];
 }

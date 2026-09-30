@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { DRIVERS, teamOf } from '../race/field';
+import { addTrackProps } from './trackProps';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { GameMap } from '../world/maps';
 import type { Track } from '../world/track';
@@ -94,7 +96,7 @@ function ribbon(t: Track, y: number, lat0: LatFn, lat1: LatFn, cond: (i: number)
     const ny = t.ny(k);
     const base = count * 2;
     // physikalisch (x, y) -> Three (x, h, -y)
-    pos.push(t.x[k] + nx * a, y, -(t.y[k] + ny * a), t.x[k] + nx * b, y, -(t.y[k] + ny * b));
+    pos.push(t.x[k] + nx * a, y + t.elev[k], -(t.y[k] + ny * a), t.x[k] + nx * b, y + t.elev[k], -(t.y[k] + ny * b));
     const u0 = uv(i, a, 0);
     const u1 = uv(i, b, 1);
     uvs.push(u0[0], u0[1], u1[0], u1[1]);
@@ -255,7 +257,7 @@ function extrudeAlong(t: Track, s0: number, s1: number, side: 1 | -1, startOff: 
       const ny = t.ny(i) * side;
       const s = k * t.ds;
       for (const [o, h] of [sg.a, sg.b]) {
-        pos.push(t.x[i] + nx * (base + o), h, -(t.y[i] + ny * (base + o)));
+        pos.push(t.x[i] + nx * (base + o), h + t.elev[i], -(t.y[i] + ny * (base + o)));
       }
       uv.push(s / sg.uvAlong, sg.a[1] / sg.uvAcross + sg.a[0] / sg.uvAcross, s / sg.uvAlong, sg.b[1] / sg.uvAcross + sg.b[0] / sg.uvAcross);
       if (k > 0) {
@@ -312,7 +314,7 @@ function addGrandstand(scene: THREE.Scene, t: Track, s0: number, s1: number, sid
     const base = edge + off(i);
     for (let r = 0; r < 2; r++) {
       const o = base + (r === 0 ? 3 : 27);
-      m4.makeTranslation(t.x[i] + t.nx(i) * side * o, r === 0 ? 8.5 : 7.6, -(t.y[i] + t.ny(i) * side * o));
+      m4.makeTranslation(t.x[i] + t.nx(i) * side * o, (r === 0 ? 8.5 : 7.6) + t.elev[i], -(t.y[i] + t.ny(i) * side * o));
       posts.setMatrixAt(k * 2 + r, m4);
     }
   }
@@ -337,14 +339,84 @@ function addMarshalPosts(scene: THREE.Scene, t: Track): void {
     const y = t.y[i] + t.ny(i) * side * o;
     e.set(0, t.hdg[i], 0);
     q.setFromEuler(e);
-    m4.compose(new THREE.Vector3(x, 1.3, -y), q, sc);
+    const eh = t.elev[i];
+    m4.compose(new THREE.Vector3(x, 1.3 + eh, -y), q, sc);
     post.setMatrixAt(k, m4);
-    m4.compose(new THREE.Vector3(x, 1.0, -y), q, sc);
+    m4.compose(new THREE.Vector3(x, 1.0 + eh, -y), q, sc);
     box.setMatrixAt(k, m4);
-    m4.compose(new THREE.Vector3(x, 2.85, -y), q, sc);
+    m4.compose(new THREE.Vector3(x, 2.85 + eh, -y), q, sc);
     light.setMatrixAt(k, m4);
   }
   scene.add(post, box, light);
+}
+
+function addPitMarkings(scene: THREE.Scene, t: Track): void {
+  // Boxenmarkierungen (Felder, Teamfarben), Geschwindigkeitsschild und Fahrspurlinien
+  const slot = canvasTex(256, 96, (g) => {
+    g.clearRect(0, 0, 256, 96);
+    g.strokeStyle = '#f2f2f2';
+    g.lineWidth = 6;
+    g.strokeRect(6, 6, 244, 84);
+  }, false);
+  const planeGeo = new THREE.PlaneGeometry(10.2, 3.4);
+  const boxes = t.pit.boxes;
+  const order = DRIVERS.map((d) => teamOf(d));
+  const colors = new THREE.InstancedMesh(new THREE.PlaneGeometry(9.4, 2.7), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }), boxes.length);
+  const lines = new THREE.InstancedMesh(planeGeo, new THREE.MeshBasicMaterial({ map: slot, transparent: true, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12 }), boxes.length);
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const c = new THREE.Color();
+  boxes.forEach((b, k) => {
+    e.set(-Math.PI / 2, 0, b.psi, 'YXZ');
+    q.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.psi);
+    q.premultiply(qy);
+    m4.compose(new THREE.Vector3(b.x, 0.03 + t.elev[b.idx], -b.y), q, new THREE.Vector3(1, 1, 1));
+    lines.setMatrixAt(k, m4);
+    m4.compose(new THREE.Vector3(b.x, 0.028 + t.elev[b.idx], -b.y), q, new THREE.Vector3(1, 1, 1));
+    colors.setMatrixAt(k, m4);
+    const tm = order[Math.min(k, order.length - 1)];
+    colors.setColorAt(k, c.set(tm.colors.primary));
+  });
+  scene.add(colors, lines);
+  // durchgezogene Linien der schnellen Spur
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xf1f1ee, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
+  const inZone = (i: number) => {
+    const r = t.s[i % t.n] > t.length / 2 ? t.s[i % t.n] - t.length : t.s[i % t.n];
+    return r > t.pitZone.full0 && r < t.pitZone.full1;
+  };
+  const geo = ribbon(t, 0.018, (i) => t.wl[i] + 8.1, (i) => t.wl[i] + 8.3, (i) => inZone(i), () => [0, 0]);
+  if (geo) scene.add(new THREE.Mesh(geo, lineMat));
+  const geo2 = ribbon(t, 0.018, (i) => t.wl[i] + 1.9, (i) => t.wl[i] + 2.1, (i) => inZone(i), () => [0, 0]);
+  if (geo2) scene.add(new THREE.Mesh(geo2, lineMat));
+  // Schild "80" am Beginn der Boxengasse
+  const sign = canvasTex(128, 128, (g) => {
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(64, 64, 62, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#d10000';
+    g.lineWidth = 14;
+    g.beginPath();
+    g.arc(64, 64, 54, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#111';
+    g.font = '800 58px Arial, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('80', 64, 68);
+  }, false);
+  for (const rs of [t.pitZone.full0 - 5, t.pitZone.full1 - 10]) {
+    const i = (Math.round(((rs + t.length) % t.length) / t.ds) + t.n) % t.n;
+    const lat = t.wl[i] + 2.6;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), new THREE.MeshStandardMaterial({ color: 0x888c92 }));
+    post.position.set(t.x[i] + t.nx(i) * lat, 1.3 + t.elev[i], -(t.y[i] + t.ny(i) * lat));
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), new THREE.MeshBasicMaterial({ map: sign, side: THREE.DoubleSide }));
+    face.position.set(post.position.x, 2.7 + t.elev[i], post.position.z);
+    face.rotation.y = t.hdg[i] - Math.PI / 2 + (rs > 0 ? Math.PI : 0) + Math.PI;
+    scene.add(post, face);
+  }
 }
 
 function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1): void {
@@ -352,19 +424,38 @@ function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, si
   const fm = new THREE.MeshStandardMaterial({ map: facade, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide });
   const roof = new THREE.MeshStandardMaterial({ color: 0x9da2a8, roughness: 0.7, side: THREE.DoubleSide });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.8, side: THREE.DoubleSide });
-  const off = (i: number) => (side === 1 ? t.barrierL[i] : t.barrierR[i]) + 20;
+  // Garagenreihe direkt hinter der Boxengasse (Mauer bei barrierL)
+  const off = (i: number) => (side === 1 ? t.barrierL[i] : t.barrierR[i]) + 0.4;
   const segs: Seg[] = [
-    { a: [0, 0], b: [0, 7], mat: 0, uvAlong: 64, uvAcross: 14 },
-    { a: [0, 7], b: [14, 7.6], mat: 1, uvAlong: 20, uvAcross: 20 },
-    { a: [14, 7.6], b: [14, 0], mat: 2, uvAlong: 20, uvAcross: 20 },
-    // Boxenmauer davor
-    { a: [-7, 0], b: [-7, 1.1], mat: 2, uvAlong: 20, uvAcross: 20 },
-    { a: [-7, 1.1], b: [-6.4, 1.1], mat: 2, uvAlong: 20, uvAcross: 20 },
+    { a: [0, 0], b: [0, 6.5], mat: 0, uvAlong: 64, uvAcross: 14 },
+    { a: [0, 6.5], b: [15, 7.2], mat: 1, uvAlong: 20, uvAcross: 20 },
+    { a: [15, 7.2], b: [15, 0], mat: 2, uvAlong: 20, uvAcross: 20 },
   ];
   scene.add(extrudeAlong(t, s0, s1, side, off, segs, [fm, roof, dark]));
-  // Kommandostand (höherer Aufbau)
-  const tower = extrudeAlong(t, s0 + 70, s0 + 120, side, (i) => off(i) - 2, [{ a: [0, 7], b: [0, 12], mat: 0, uvAlong: 40, uvAcross: 14 }, { a: [0, 12], b: [10, 12], mat: 1, uvAlong: 10, uvAcross: 10 }], [fm, roof]);
+  // Kommandostand (höherer Aufbau) und Überbau über der Boxenmauer
+  const tower = extrudeAlong(t, s0 + 130, s0 + 185, side, (i) => off(i) - 1, [{ a: [0, 6.5], b: [0, 12.5], mat: 0, uvAlong: 40, uvAcross: 14 }, { a: [0, 12.5], b: [11, 12.5], mat: 1, uvAlong: 10, uvAcross: 10 }], [fm, roof]);
   scene.add(tower);
+  // Garagentore und Team-Schilder: je Box ein dunkles Tor mit farbigem Band
+  const n = t.pit.boxes.length;
+  const doors = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 4.2), new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.9 }), n);
+  const bands = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 1.1), new THREE.MeshBasicMaterial({}), n);
+  const m4 = new THREE.Matrix4();
+  const col = new THREE.Color();
+  const q = new THREE.Quaternion();
+  t.pit.boxes.forEach((b, k) => {
+    const i = b.idx;
+    const o = off(i) - 0.05;
+    const x = t.x[i] + t.nx(i) * side * o;
+    const y = t.y[i] + t.ny(i) * side * o;
+    // Fläche zeigt zur Strecke (Normale −Querrichtung)
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.hdg[i] + (side === 1 ? Math.PI / 2 : -Math.PI / 2));
+    m4.compose(new THREE.Vector3(x, 2.2 + t.elev[i], -y), q, new THREE.Vector3(1, 1, 1));
+    doors.setMatrixAt(k, m4);
+    m4.compose(new THREE.Vector3(x, 4.8 + t.elev[i], -y), q, new THREE.Vector3(1, 1, 1));
+    bands.setMatrixAt(k, m4);
+    bands.setColorAt(k, col.set(teamOf(DRIVERS[Math.min(k, DRIVERS.length - 1)]).colors.primary));
+  });
+  scene.add(doors, bands);
 }
 
 function addGantry(scene: THREE.Scene, t: Track): void {
@@ -405,7 +496,7 @@ function addGantry(scene: THREE.Scene, t: Track): void {
   board.rotation.y = -Math.PI / 2;
   grp.add(board);
   // Physik (x, y) -> Three (x, h, -y); Ausrichtung entlang der Fahrtrichtung
-  grp.position.set(t.x[i], 0, -t.y[i]);
+  grp.position.set(t.x[i], t.elev[i], -t.y[i]);
   grp.rotation.y = t.hdg[i];
   scene.add(grp);
 }
@@ -432,7 +523,7 @@ function addAdBoards(scene: THREE.Scene, t: Track): void {
         const ny = t.ny(k) * side;
         const px = t.x[k] + nx * o;
         const py = t.y[k] + ny * o;
-        pos.push(px, 0.3, -py, px, 1.3, -py);
+        pos.push(px, 0.3 + t.elev[k], -py, px, 1.3 + t.elev[k], -py);
         const u0 = (t.s[k] + (k < i ? t.length : 0)) / 48;
         const u = side === 1 ? u0 : -u0;
         uv.push(u, 0, u, 1);
@@ -453,36 +544,45 @@ function addAdBoards(scene: THREE.Scene, t: Track): void {
 // Natur: Terrain, Wald, Berge
 // ---------------------------------------------------------------------------------------------
 
-function buildDistanceGrid(t: Track, x0: number, y0: number, nx: number, ny: number, cell: number): Float32Array {
+function buildDistanceGrid(t: Track, x0: number, y0: number, nx: number, ny: number, cell: number): { d: Float32Array; h: Float32Array } {
   const INF = 1e9;
   const d = new Float32Array(nx * ny).fill(INF);
+  const h = new Float32Array(nx * ny);
   for (let i = 0; i < t.n; i++) {
     const cx = Math.floor((t.x[i] - x0) / cell);
     const cy = Math.floor((t.y[i] - y0) / cell);
-    if (cx >= 0 && cy >= 0 && cx < nx && cy < ny) d[cy * nx + cx] = 0;
+    if (cx >= 0 && cy >= 0 && cx < nx && cy < ny) {
+      d[cy * nx + cx] = 0;
+      h[cy * nx + cx] = t.elev[i];
+    }
   }
   const dg = cell * 1.4142;
+  const relax = (k: number, from: number, add: number) => {
+    const v = d[from] + add;
+    if (v < d[k]) {
+      d[k] = v;
+      h[k] = h[from];
+    }
+  };
   for (let y = 0; y < ny; y++) {
     for (let x = 0; x < nx; x++) {
-      let v = d[y * nx + x];
-      if (x > 0) v = Math.min(v, d[y * nx + x - 1] + cell);
-      if (y > 0) v = Math.min(v, d[(y - 1) * nx + x] + cell);
-      if (x > 0 && y > 0) v = Math.min(v, d[(y - 1) * nx + x - 1] + dg);
-      if (x < nx - 1 && y > 0) v = Math.min(v, d[(y - 1) * nx + x + 1] + dg);
-      d[y * nx + x] = v;
+      const k = y * nx + x;
+      if (x > 0) relax(k, k - 1, cell);
+      if (y > 0) relax(k, k - nx, cell);
+      if (x > 0 && y > 0) relax(k, k - nx - 1, dg);
+      if (x < nx - 1 && y > 0) relax(k, k - nx + 1, dg);
     }
   }
   for (let y = ny - 1; y >= 0; y--) {
     for (let x = nx - 1; x >= 0; x--) {
-      let v = d[y * nx + x];
-      if (x < nx - 1) v = Math.min(v, d[y * nx + x + 1] + cell);
-      if (y < ny - 1) v = Math.min(v, d[(y + 1) * nx + x] + cell);
-      if (x < nx - 1 && y < ny - 1) v = Math.min(v, d[(y + 1) * nx + x + 1] + dg);
-      if (x > 0 && y < ny - 1) v = Math.min(v, d[(y + 1) * nx + x - 1] + dg);
-      d[y * nx + x] = v;
+      const k = y * nx + x;
+      if (x < nx - 1) relax(k, k + 1, cell);
+      if (y < ny - 1) relax(k, k + nx, cell);
+      if (x < nx - 1 && y < ny - 1) relax(k, k + nx + 1, dg);
+      if (x > 0 && y < ny - 1) relax(k, k + nx - 1, dg);
     }
   }
-  return d;
+  return { d, h };
 }
 
 export interface TrackVisuals {
@@ -507,7 +607,9 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   const H = t.maxY - t.minY + 2 * margin;
   const nx = Math.ceil(W / cell) + 1;
   const ny = Math.ceil(H / cell) + 1;
-  const dist = buildDistanceGrid(t, x0, y0, nx, ny, cell);
+  const grids = buildDistanceGrid(t, x0, y0, nx, ny, cell);
+  const dist = grids.d;
+  const trackH = grids.h;
   const distAt = (x: number, y: number): number => {
     const fx = (x - x0) / cell;
     const fy = (y - y0) / cell;
@@ -525,13 +627,32 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const e = Math.min(x - x0, x0 + W - x, y - y0, y0 + H - y);
     return smooth(0, 500, e);
   };
+  const trackHAt = (x: number, y: number): number => {
+    const fx = (x - x0) / cell;
+    const fy = (y - y0) / cell;
+    const ix = Math.min(nx - 2, Math.max(0, Math.floor(fx)));
+    const iy = Math.min(ny - 2, Math.max(0, Math.floor(fy)));
+    const tx = Math.min(1, Math.max(0, fx - ix));
+    const ty = Math.min(1, Math.max(0, fy - iy));
+    const a = trackH[iy * nx + ix];
+    const b = trackH[iy * nx + ix + 1];
+    const c = trackH[(iy + 1) * nx + ix];
+    const d = trackH[(iy + 1) * nx + ix + 1];
+    return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+  };
   const heightAt = (x: number, y: number): number => {
     const d = distAt(x, y);
-    if (d < 70) return 0;
-    const big = fbm(x / 700, y / 700, seed) * 2 - 0.5; // -0.5 .. 1.5
-    const rolling = (fbm(x / 160, y / 160, seed + 9) - 0.5) * 2.4;
-    const hills = th.hills * Math.max(0, big) * smooth(140, 620, d);
-    return (hills + rolling * smooth(70, 220, d)) * edgeFade(x, y);
+    let natural = 0;
+    if (d >= 70) {
+      const big = fbm(x / 700, y / 700, seed) * 2 - 0.5; // -0.5 .. 1.5
+      const rolling = (fbm(x / 160, y / 160, seed + 9) - 0.5) * 2.4;
+      const hills = th.hills * Math.max(0, big) * smooth(140, 620, d);
+      natural = (hills + rolling * smooth(70, 220, d)) * edgeFade(x, y);
+    }
+    // nahe der Strecke folgt das Gelände der Streckenhöhe, weiter weg geht es in die natürlichen Hügel über
+    const w = 1 - smooth(40, 320, d);
+    const th0 = d < 90 ? t.heightAt(x, y) : trackHAt(x, y);
+    return natural + (th0 - natural) * w - 0.3 * (1 - smooth(8, 40, d));
   };
 
   // ---- Terrain ----
@@ -614,7 +735,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   };
   // gepflegter Rasen bis zur Barriere
   const lawnMat = layerMat(lawnTex, 1, { color: 0xb6d19a, roughness: 1 });
-  add(ribbon(t, 0.004, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
+  add(ribbon(t, 0.004, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   add(ribbon(t, 0.004, (i) => -(t.wr[i] + t.barrierR[i]), (i) => -(t.wr[i] + t.kerbR[i]), () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   // Kies
   const gravelMat = layerMat(gravelTex, 2, { roughness: 1 });
@@ -622,7 +743,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   add(ribbon(t, 0.008, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   // Asphalt
   const asphaltMat = layerMat(asphalt, 3, { roughness: 0.88, color: 0xb9b9bd });
-  add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
+  add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i] + t.pitW[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
   // Reifenspur (Ideallinie: zur Kurveninnenseite verschoben)
   {
     const lineOff = new Float64Array(t.n);
@@ -658,26 +779,32 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     line.rotation.z = t.hdg[0];
     const cx = t.x[0] + t.nx(0) * (t.wl[0] - t.wr[0]) * 0.5;
     const cy = t.y[0] + t.ny(0) * (t.wl[0] - t.wr[0]) * 0.5;
-    line.position.set(cx, 0.022, -cy);
+    line.position.set(cx, 0.022 + t.elev[0], -cy);
     scene.add(line);
   }
 
+  addPitMarkings(scene, t);
+  addTrackProps(scene, t);
+
   // ---- Wände (Beton, Leitplanken, Reifenwände) ----
-  buildWalls(scene, map.world.walls, true);
+  buildWalls(scene, map.world.walls, true, (x, y) => t.heightAt(x, y));
   addAdBoards(scene, t);
 
   // ---- Bauwerke an der Start/Ziel-Geraden ----
   addGantry(scene, t);
   addGrandstand(scene, t, -330, -60, -1);
   addGrandstand(scene, t, 40, 260, -1);
-  addGrandstand(scene, t, 20, 200, 1);
-  addPitBuilding(scene, t, -300, -40, 1);
+  const pitS0 = t.pitZone.box0 - 12;
+  const pitS1 = t.pitZone.box0 + 22 * 11 + 4;
+  const leftS0 = Math.max(20, pitS1 + 25);
+  addGrandstand(scene, t, leftS0, leftS0 + 180, 1);
+  addPitBuilding(scene, t, pitS0, pitS1, 1);
   // Kurventribünen außen an den engsten Kurven, Streckenposten und Flutlichtmasten
   const stands: Array<{ s0: number; s1: number; side: 1 | -1 }> = [
     { s0: -330, s1: -60, side: -1 },
     { s0: 40, s1: 260, side: -1 },
-    { s0: 20, s1: 200, side: 1 },
-    { s0: -300, s1: -40, side: 1 },
+    { s0: leftS0, s1: leftS0 + 180, side: 1 },
+    { s0: pitS0, s1: pitS1, side: 1 },
   ];
   {
     const cand: Array<{ i: number; sev: number }> = [];

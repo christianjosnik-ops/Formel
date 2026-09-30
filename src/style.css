@@ -258,3 +258,36 @@ body.showroom #speedfx { display: none; }
 @media (max-height: 520px) { .logo { font-size: 18px; letter-spacing: 4px; } #mmTabs button { padding: 6px 12px; font-size: 12px; } .card { min-height: 84px; padding: 8px 12px; } .card canvas { height: 66px; } .card h3 { font-size: 15px; } #stGo { padding: 8px 30px; font-size: 16px; } #mmBody { padding: 8px 0; } }
 
 body.inmenu #hud, body.inmenu #pads, body.inmenu #topbtns, body.inmenu #telemetry, body.inmenu #damage, body.inmenu #race, body.inmenu #speedfx { visibility: hidden; }
+
+/* ---- Reifen und Boxenstopp ---- */
+#tyrePanel { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(92px + var(--safe-b)); display: flex; align-items: center; gap: 10px; padding: 5px 10px; background: var(--glass); border: 1px solid var(--line); border-radius: 12px; pointer-events: auto; }
+#tyreBadge { width: 30px; height: 30px; border-radius: 50%; border: 4px solid #ffd12e; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #fff; background: rgba(0,0,0,.4); }
+#tyreBars { display: flex; gap: 6px; }
+.tb { position: relative; width: 16px; height: 34px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; border: 2px solid transparent; }
+.tb i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: #2ecc5f; }
+.tb b { position: absolute; left: 0; right: 0; top: 1px; text-align: center; font-size: 8px; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000; }
+.tb.cold { border-color: #4da3ff; }
+.tb.hot { border-color: #ff4a3d; }
+#pitCtl { display: flex; align-items: center; gap: 8px; }
+#cmpSel { display: flex; gap: 4px; }
+#cmpSel button { width: 28px; height: 28px; padding: 0; border-radius: 50%; font-weight: 900; font-size: 12px; background: rgba(0,0,0,.4); color: #fff; border: 3px solid #888; }
+#cmpSel button.c-soft { border-color: #ff3b30; }
+#cmpSel button.c-medium { border-color: #ffd12e; }
+#cmpSel button.c-hard { border-color: #f2f2f2; }
+#cmpSel button.on { background: rgba(255,255,255,.35); }
+#btnBox { padding: 8px 14px; font-weight: 900; letter-spacing: 2px; border-radius: 8px; background: #2a3442; color: #fff; border: 2px solid #8fa3bd; }
+#btnBox.req { background: #e10600; border-color: #fff; animation: blink 0.8s infinite; }
+@keyframes blink { 50% { opacity: .6; } }
+#pitMsg { position: absolute; top: 36%; left: 50%; transform: translateX(-50%); font-size: 22px; font-weight: 800; letter-spacing: 2px; text-shadow: 0 3px 14px rgba(0,0,0,.8); text-align: center; white-space: nowrap; }
+body.showroom #tyrePanel, body.showroom #pitMsg { display: none; }
+@media (max-height: 520px) { #tyrePanel { bottom: calc(58px + var(--safe-b)); padding: 3px 8px; transform: translateX(-50%) scale(.85); } .tb { height: 28px; } #pitMsg { font-size: 15px; top: 26%; } }
+
+/* ---- Werkstatt ---- */
+#garageHead { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; font-size: 13px; color: #b9c3d2; }
+#garageHead b { font-size: 26px; color: #ffd12e; letter-spacing: 1px; }
+.pips { display: flex; gap: 5px; margin: 8px 0; }
+.pips i { width: 26px; height: 8px; border-radius: 2px; background: rgba(255,255,255,.15); }
+.pips i.on { background: linear-gradient(90deg, #e10600, #ff8a7a); }
+.card .buy { margin-top: 8px; padding: 8px 14px; font-weight: 800; letter-spacing: 1px; border-radius: 4px 10px 4px 10px; background: #1e8f4a; color: #fff; border: 0; }
+.card .buy:disabled { background: #39424f; color: #8a94a3; }
+#resPrize { margin-top: 8px; font-size: 16px; font-weight: 800; color: #ffd12e; text-align: center; }

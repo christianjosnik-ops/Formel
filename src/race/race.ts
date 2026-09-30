@@ -6,6 +6,8 @@ import type { Track } from '../world/track';
 import { AIDriver, type AIMode, type NearCar } from './ai';
 import { AI_LEVELS, driverPace, DRIVERS, type DriverData, type TeamData, teamOf, teamPerformance } from './field';
 import { RacingLine } from './line';
+import { PIT } from '../world/track';
+import { COMPOUND_ORDER, type CompoundId } from '../config/tyres';
 
 export type GridMode = 'pole' | 'mid' | 'last' | 'random';
 
@@ -23,6 +25,12 @@ export interface RaceConfig {
   gridOrder?: number[];
   /** Spielerauto von der KI fahren lassen (Tests/Demo). */
   autopilot?: boolean;
+  /** Verschleißfaktor (0 = aus, 1 = normal, 2 = hoch). */
+  wearScale?: number;
+  /** Startreifen des Spielers. */
+  startCompound?: CompoundId;
+  /** Upgrades des Spielers (Stufen 0..5). */
+  upgrades?: { engine: number; aero: number; brakes: number; tyres: number; weight: number };
 }
 
 export interface Entrant {
@@ -52,6 +60,16 @@ export interface Entrant {
   stopped: number;
   cpTimes: Float64Array;
   cpNext: number;
+  /** Boxenstopp: 0 keiner, 1 angefordert, 2 Boxengasse, 3 Reifenwechsel, 4 Ausfahrt. */
+  pit: number;
+  pitStops: number;
+  pitTimer: number;
+  pitSvc: number;
+  pitEntryLat: number;
+  pitThr: number;
+  pitReq: boolean;
+  nextCompound: CompoundId;
+  limiter: boolean;
 }
 
 export type RaceState = 'grid' | 'racing' | 'finished';
@@ -155,7 +173,19 @@ export class RaceDirector {
         stopped: 0,
         cpTimes: new Float64Array((cfg.laps + 3) * this.cpCount).fill(-1),
         cpNext: 0,
+        pit: 0,
+        pitStops: 0,
+        pitTimer: 0,
+        pitSvc: 2.4 + this.rnd() * 1.0,
+        pitEntryLat: 0,
+        pitThr: 0.6 + this.rnd() * 0.16,
+        pitReq: false,
+        nextCompound: 'medium',
+        limiter: false,
       });
+      v.wearScale = cfg.wearScale ?? 1;
+      const r0 = this.rnd();
+      v.fitTyres(isPlayer ? cfg.startCompound ?? 'medium' : r0 < 0.3 ? 'soft' : r0 < 0.8 ? 'medium' : 'hard');
     }
     this.placeOnGrid();
   }
@@ -249,6 +279,7 @@ export class RaceDirector {
       return;
     }
     this.time += dt;
+    this.applyPlayerOverrides();
     // KI, Fortschritt, Rangfolge: alle 10 ms
     if (this.step % 5 === 0) this.tick(dt * 5);
   }
@@ -369,9 +400,12 @@ export class RaceDirector {
     // Windschatten und verwirbelte Luft
     this.slipstream(ranked);
 
+    const pl = ents[0];
+    if (pl.isPlayer && !pl.ai && !pl.out) this.pitPlayer(pl, this.world.vehicles[pl.vi], dt);
+
     // KI-Steuerung: in der Startphase vorsichtiger (Pulk, enge erste Kurve)
     const player = ents.find((x) => x.isPlayer && !cfgAuto);
-    const startEase = Math.min(1, 0.84 + 0.16 * (now / 45));
+    const startEase = Math.min(1, 0.78 + 0.22 * (now / 60));
     for (const e of ents) {
       if (e.out || !e.ai) continue;
       const v = this.world.vehicles[e.vi];
@@ -382,6 +416,7 @@ export class RaceDirector {
       }
       // Startspur halten, bis die erste Kurve nahe ist
       e.ai.laneBias = e.gridLat * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800) - this.line.offset[e.idx] * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800);
+      if (this.pitAI(e, v, dt)) continue;
       const { ahead, beside } = this.neighbours(e, ents);
       const mode: AIMode = e.finished ? 'cooldown' : 'race';
       // Gummiband: Feld bleibt beim Spieler (enges Rad-an-Rad-Rennen); zu weit Zurückliegende holen etwas auf,
@@ -408,6 +443,155 @@ export class RaceDirector {
     if (this.state === 'racing') {
       const everyoneDone = ents.every((e) => e.finished || e.out);
       if (this.winnerTime >= 0 && (everyoneDone || now - this.winnerTime > 40)) this.state = 'finished';
+    }
+  }
+
+  private rel(idx: number): number {
+    const t = this.track;
+    return t.s[idx] > t.length / 2 ? t.s[idx] - t.length : t.s[idx];
+  }
+
+  /** Wahl der nächsten Mischung anhand der Restdistanz. */
+  private pickCompound(e: Entrant): CompoundId {
+    const rem = this.cfg.laps - e.dist / this.track.length;
+    return rem <= 6 ? 'soft' : rem <= 11 ? 'medium' : 'hard';
+  }
+
+  private smooth(a: number, b: number, x: number): number {
+    const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return k * k * (3 - 2 * k);
+  }
+
+  /** Setzt die Boxenanforderung des Spielers (HUD-Knopf). */
+  setPlayerPit(request: boolean, compound: CompoundId): void {
+    const e = this.entrants.find((x) => x.isPlayer);
+    if (!e || e.out) return;
+    e.nextCompound = compound;
+    if (request && e.pit === 0) {
+      e.pitReq = true;
+      e.pit = 1;
+    } else if (!request && e.pit === 1) {
+      e.pitReq = false;
+      e.pit = 0;
+    }
+  }
+
+  /** Boxengasse für KI: Einfahrt, Anfahrt zur Box, Reifenwechsel, Ausfahrt. true = Auto wird hier gesteuert. */
+  private pitAI(e: Entrant, v: Vehicle, dt: number): boolean {
+    const t = this.track;
+    const ai = e.ai!;
+    const rel = this.rel(e.idx);
+    const speed = Math.hypot(v.u, v.v);
+    const box = t.pit.boxes[e.driver % t.pit.boxes.length];
+    const wl = t.wl[e.idx];
+    if (e.pit === 0) {
+      let wmax = 0;
+      for (let i = 0; i < 4; i++) wmax = Math.max(wmax, v.tyreWear[i]);
+      const remaining = this.cfg.laps - e.dist / t.length;
+      if (this.cfg.laps >= 2 && e.pitStops < 3 && wmax > e.pitThr && remaining > 1.4 && !e.finished && !v.retired) {
+        e.pit = 1;
+        e.nextCompound = this.pickCompound(e);
+      }
+    }
+    const pz = t.pitZone;
+    if (e.pit === 1 && rel > pz.entry0 - 25 && rel < pz.full0 - 40) {
+      e.pit = 2;
+      e.pitEntryLat = t.lateral(e.idx, v.x, v.y);
+    }
+    if (e.pit === 0 || e.pit === 1) return false;
+    const limit = PIT.limit;
+    if (e.pit === 2) {
+      const dBox = box.s - rel;
+      const k = this.smooth(pz.entry0 - 10, pz.full0 + 5, rel);
+      let lat = e.pitEntryLat + (wl + PIT.fastLane - e.pitEntryLat) * k;
+      lat += (PIT.workLane - PIT.fastLane) * this.smooth(45, 8, dBox);
+      let vT: number;
+      if (rel < pz.full0) vT = Math.sqrt(limit * limit + 2 * 6 * Math.max(0, pz.full0 - rel));
+      else vT = limit;
+      vT = Math.min(vT, Math.sqrt(2 * 3 * Math.max(0, dBox - 1.4)) + 0.2);
+      if (dBox < -6) {
+        // Box verpasst: weiter durch die Gasse und ausfahren
+        e.pit = 4;
+        return true;
+      }
+      ai.driveTo(dt, v, lat, Math.min(vT, 90));
+      if (speed < 0.6 && Math.abs(dBox) < 4.5) {
+        e.pit = 3;
+        e.pitTimer = e.pitSvc;
+      }
+      return true;
+    }
+    if (e.pit === 3) {
+      v.input.throttle = 0;
+      v.input.brake = 1;
+      v.input.steer = 0;
+      e.pitTimer -= dt;
+      if (e.pitTimer <= 0) {
+        v.fitTyres(e.nextCompound);
+        e.pitStops++;
+        e.pit = 4;
+      }
+      return true;
+    }
+    // Ausfahrt
+    const dOut = rel - box.s;
+    const lat = wl + PIT.fastLane + (PIT.workLane - PIT.fastLane) * (1 - this.smooth(0, 25, dOut));
+    const vT = rel < pz.full1 - 8 ? limit : limit + (rel - (pz.full1 - 8)) * 0.6;
+    ai.driveTo(dt, v, lat, vT);
+    if (rel > pz.full1 + 5 || rel < pz.entry0 - 60) {
+      e.pit = 0;
+      ai.lat = Math.max(-6, Math.min(8, t.lateral(e.idx, v.x, v.y) - this.line.offset[e.idx]));
+      ai.laneBias = 0;
+    }
+    return true;
+  }
+
+  /** Boxengasse für den Spieler: Begrenzer, Reifenwechsel an der eigenen Box. */
+  private pitPlayer(e: Entrant, v: Vehicle, dt: number): void {
+    const t = this.track;
+    const rel = this.rel(e.idx);
+    const lat = t.lateral(e.idx, v.x, v.y);
+    const wl = t.wl[e.idx];
+    const speed = Math.hypot(v.u, v.v);
+    const box = t.pit.boxes[e.driver % t.pit.boxes.length];
+    const pzp = t.pitZone;
+    const inLane = lat > wl + 0.9 && rel > pzp.full0 - 10 && rel < pzp.full1 + 10;
+    e.limiter = inLane;
+    if (e.pit === 3) {
+      e.pitTimer -= dt;
+      if (e.pitTimer <= 0) {
+        v.fitTyres(e.nextCompound);
+        e.pitStops++;
+        e.pitReq = false;
+        e.pit = 4;
+      }
+      return;
+    }
+    if (e.pit === 4) {
+      if (!inLane) e.pit = 0;
+      return;
+    }
+    if (e.pitReq && inLane && speed < 0.8 && Math.abs(rel - box.s) < 4 && lat > wl + 7.6 && lat < wl + 13.6) {
+      e.pit = 3;
+      e.pitTimer = e.pitSvc;
+    }
+  }
+
+  /** Pro Physikschritt: Bremse halten beim Reifenwechsel, Begrenzer in der Boxengasse (Spieler). */
+  private applyPlayerOverrides(): void {
+    const e = this.entrants[0];
+    if (!e || !e.isPlayer || e.ai) return;
+    const v = this.world.vehicles[e.vi];
+    if (e.pit === 3) {
+      v.input.throttle = 0;
+      v.input.brake = 1;
+    } else if (e.limiter) {
+      const speed = Math.hypot(v.u, v.v);
+      const over = speed - PIT.limit;
+      if (over > 0) {
+        v.input.throttle = 0;
+        v.input.brake = Math.max(v.input.brake, Math.min(0.7, 0.15 + over * 0.12));
+      } else if (over > -2.5) v.input.throttle *= Math.max(0, -over / 2.5);
     }
   }
 
@@ -440,7 +624,10 @@ export class RaceDirector {
     const t = this.track;
     const L = t.length;
     let ahead: NearCar | null = null;
+    let aheadSame: NearCar | null = null;
     let beside: NearCar | null = null;
+    const me = this.world.vehicles[e.vi];
+    const myLat = t.lateral(e.idx, me.x, me.y);
     for (const o of ents) {
       if (o === e || o.out) continue;
       let d = o.dist - e.dist;
@@ -453,9 +640,11 @@ export class RaceDirector {
       }
       if (d > 0 && d < 75) {
         if (!ahead || d < ahead.gap) ahead = { gap: d, lat, speed: sp };
+        // dasselbe Band: dieses Auto bestimmt den Sicherheitsabstand (nicht ein versetztes Auto der Nachbarspur)
+        if (Math.abs(lat - myLat) < 3.4 && (!aheadSame || d < aheadSame.gap)) aheadSame = { gap: d, lat, speed: sp };
       }
     }
-    return { ahead, beside };
+    return { ahead: aheadSame ?? ahead, beside };
   }
 
   private slipstream(ranked: Entrant[]): void {
@@ -507,5 +696,11 @@ export class RaceDirector {
     out[base + S.raceTime] = this.time;
     out[base + S.raceLaps] = this.cfg.laps;
     out[base + S.raceFinishTime] = e.finished ? e.finishTime : 0;
+    out[base + S.pitState] = e.pit;
+    out[base + S.pitTimer] = e.pit === 3 ? Math.max(0, e.pitTimer) : 0;
+    out[base + S.pitStops] = e.pitStops;
+    out[base + S.pitBoxS] = this.track.pit.boxes[e.driver % this.track.pit.boxes.length].s;
+    out[base + S.pitLimiter] = e.limiter ? 1 : 0;
+    out[base + S.pitNext] = COMPOUND_ORDER.indexOf(e.nextCompound);
   }
 }

@@ -155,6 +155,14 @@ export class World {
   step(dt: number): void {
     const vs = this.vehicles;
     for (let vi = 0; vi < vs.length; vi++) this.sampleSurfaces(vs[vi]);
+    const sf = this.map.slopeFn;
+    if (sf && (this.slopeTick++ & 3) === 0) {
+      for (let vi = 0; vi < vs.length; vi++) {
+        sf(vs[vi].x, vs[vi].y, this.slopeTmp);
+        vs[vi].slopeX = this.slopeTmp[0];
+        vs[vi].slopeY = this.slopeTmp[1];
+      }
+    }
     this.tmpCount = 0;
     for (let vi = 0; vi < vs.length; vi++) {
       this.beginAccumulate();
@@ -787,6 +795,8 @@ export class World {
   }
 
   private readonly tmp = new Float64Array(S.size + 4);
+  private readonly slopeTmp = new Float64Array(2);
+  private slopeTick = 0;
 
   /** Schreibt einen kompakten Fahrzeugblock (Skalarfelder + Dellen) an `base`. */
   writeCarBlock(out: Float64Array, base: number, index: number, before?: (tmp: Float64Array) => void): void {

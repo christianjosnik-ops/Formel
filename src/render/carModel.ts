@@ -296,6 +296,8 @@ export class CarModel {
   private readonly helmet = new THREE.Group();
   private readonly brakeLightMats: THREE.MeshStandardMaterial[] = [];
   private readonly dent: DentUniforms;
+  private readonly compoundU = { value: new THREE.Color() };
+  lastCompound = -1;
   private readonly spinAngle = new Float64Array(4);
   private readonly tmp = new THREE.Vector3();
   readonly livery: Livery;
@@ -326,6 +328,7 @@ export class CarModel {
     });
 
     // ---- Materialien ----
+    this.compoundU.value.set(COMPOUND_COLOR[livery.compound ?? 'medium']);
     const primary = new THREE.Color(livery.primary);
     const secondary = new THREE.Color(livery.secondary);
     const accent = new THREE.Color(livery.accent);
@@ -357,7 +360,7 @@ export class CarModel {
     patchMaterial(sidewall, 'f1-sidewall', this.dent, {
       decl: SIDEWALL_DECL,
       body: SIDEWALL_BODY,
-      uniforms: { uCompound: { value: new THREE.Color(COMPOUND_COLOR[livery.compound ?? 'medium']) } },
+      uniforms: { uCompound: this.compoundU },
     });
     const cover = new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: 0.3, metalness: 0.85 });
     const led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x39c6ff, emissiveIntensity: 1.6 });
@@ -501,10 +504,10 @@ export class CarModel {
   }
 
   /** Aktualisiert Transformationen und Schadensdarstellung aus einem (interpolierten) Snapshot. */
-  update(snap: Float64Array, dt: number): void {
+  update(snap: Float64Array, dt: number, ground = 0, tilt = 0): void {
     const cfg = this.cfg;
-    this.root.position.set(snap[S.x], 0, -snap[S.y]);
-    this.root.rotation.set(0, snap[S.psi], 0);
+    this.root.position.set(snap[S.x], ground, -snap[S.y]);
+    this.root.rotation.set(0, snap[S.psi], tilt);
     this.pivot.position.y = cfg.geometry.cgHeight - snap[S.heave];
     // Nick: positiv = Nase tiefer -> Rotation um z negativ; Wanken: positiv = rechts tiefer -> Rotation um x positiv.
     this.pivot.rotation.set(snap[S.roll], 0, -snap[S.pitch], 'YZX');
@@ -557,6 +560,11 @@ export class CarModel {
     this.tmp.set(x, y, z);
     this.shell.updateWorldMatrix(true, false);
     return this.shell.localToWorld(target.copy(this.tmp));
+  }
+
+  /** Reifenmischung (Farbring der Flanke). */
+  setCompound(id: string): void {
+    this.compoundU.value.set(COMPOUND_COLOR[id as keyof typeof COMPOUND_COLOR] ?? '#ffd12e');
   }
 
   setFirstPerson(on: boolean): void {

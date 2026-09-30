@@ -105,6 +105,9 @@ export class Vehicle {
   extMRoll = 0;
   powerScale = 1;
   retired = 0;
+  /** Geländegradient (Steigung in Weltrichtung), vom World-Modul gesetzt. */
+  slopeX = 0;
+  slopeY = 0;
   /** Teamleistung (Ratings wirken nur über physikalische Parameter). */
   teamPower = 1;
   teamAero = 1;
@@ -601,6 +604,13 @@ export class Vehicle {
       this.omega[i] = w1;
     }
 
+    // ---------------- Hangabtrieb ----------------
+    if (this.slopeX !== 0 || this.slopeY !== 0) {
+      const cpS = Math.cos(this.psi);
+      const spS = Math.sin(this.psi);
+      fxBody -= m * g * (this.slopeX * cpS + this.slopeY * spS);
+      fyBody -= m * g * (-this.slopeX * spS + this.slopeY * cpS);
+    }
     // ---------------- Aufbau integrieren ----------------
     const axB = fxBody / m;
     const ayB = fyBody / m;

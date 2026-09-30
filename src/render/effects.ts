@@ -9,6 +9,7 @@ import type { CarModel } from './carModel';
 // ---------------------------------------------------------------------------------------------
 
 export class DebrisRenderer {
+  groundY = 0;
   private readonly wheels: THREE.Group[] = [];
   private readonly wheelTilt: THREE.Group[] = [];
   private readonly wheelSpin: THREE.Group[] = [];
@@ -76,22 +77,22 @@ export class DebrisRenderer {
         w.visible = true;
         wheelSeen |= 1 << (id & 3);
         const cr = Math.cos(tilt);
-        w.position.set(x, hop + 0.345 * cr + 0.13 * Math.sin(tilt), -y);
+        w.position.set(x, this.groundY + hop + 0.345 * cr + 0.13 * Math.sin(tilt), -y);
         w.rotation.set(0, psi, 0);
         this.wheelTilt[id & 3].rotation.set(tilt, 0, 0);
         this.wheelSpin[id & 3].rotation.set(0, 0, -spin);
       } else if (kind === BODY_WING_F) {
         wf = true;
-        this.wingF.position.set(x, hop + 0.06, -y);
+        this.wingF.position.set(x, this.groundY + hop + 0.06, -y);
         this.wingF.rotation.set(0, psi, 0);
       } else if (kind === BODY_WING_R) {
         wr = true;
-        this.wingR.position.set(x, hop + 0.06, -y);
+        this.wingR.position.set(x, this.groundY + hop + 0.06, -y);
         this.wingR.rotation.set(0, psi, 0);
       } else if (kind === BODY_SHARD && shardN < 96) {
         this.eul.set(spin * 0.7, psi, spin);
         this.q.setFromEuler(this.eul);
-        this.pos.set(x, hop + 0.02, -y);
+        this.pos.set(x, this.groundY + hop + 0.02, -y);
         this.m4.compose(this.pos, this.q, this.one);
         this.shards.setMatrixAt(shardN++, this.m4);
       }
@@ -139,6 +140,7 @@ void main() {
 }`;
 
 class ParticleSystem {
+  yOffset = 0;
   readonly points: THREE.Points;
   private readonly n: number;
   private readonly px: Float32Array;
@@ -194,7 +196,7 @@ class ParticleSystem {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % this.n;
     this.px[i * 3] = x;
-    this.px[i * 3 + 1] = y;
+    this.px[i * 3 + 1] = y + this.yOffset;
     this.px[i * 3 + 2] = z;
     this.vel[i * 3] = vx;
     this.vel[i * 3 + 1] = vy;
@@ -248,6 +250,10 @@ class ParticleSystem {
 const rnd = (): number => Math.random();
 
 export class Effects {
+  set groundY(h: number) {
+    this.sparks.yOffset = h;
+    this.smoke.yOffset = h;
+  }
   private readonly sparks = new ParticleSystem(700, true, 900);
   private readonly smoke = new ParticleSystem(900, false, 900);
   private readonly car = TEST_CAR_2026;

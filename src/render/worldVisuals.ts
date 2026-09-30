@@ -164,8 +164,8 @@ function tireWallTexture(): THREE.CanvasTexture {
 }
 
 /** Baut Betonwände, Reifenbarrieren und Leitplanken. Bei tireBox werden Reifenwände als texturierte Box gezeichnet (günstig für lange Strecken). */
-export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false): void {
-  const concrete = walls.filter((w) => w.kind === 'concrete');
+export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false, heightAt: (x: number, y: number) => number = () => 0): void {
+  const concrete = walls.filter((w) => w.kind === 'concrete' || w.kind === 'pitwall');
   const tires = walls.filter((w) => w.kind === 'tire');
   const armco = walls.filter((w) => w.kind === 'armco');
   const m4 = new THREE.Matrix4();
@@ -183,7 +183,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     concrete.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.3, 0.525, -((w.ay + w.by) / 2 - w.ny * 0.3));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.3, 0.525 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.3));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -198,7 +198,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     tires.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525, -((w.ay + w.by) / 2 - w.ny * 0.75));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.75));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -229,7 +229,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
           for (let l = 0; l < layers; l++) {
             const px = w.ax + dx * t - w.nx * off;
             const py = w.ay + dy * t - w.ny * off;
-            pos.set(px, 0.15 + l * 0.3, -py);
+            pos.set(px, 0.15 + l * 0.3 + heightAt(px, py), -py);
             q.identity();
             scl.set(1, 1, 1);
             m4.compose(pos, q, scl);
@@ -254,7 +254,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     armco.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.08, 0.6, -((w.ay + w.by) / 2 - w.ny * 0.08));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.08, 0.6 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.08));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -262,7 +262,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
       const n = Math.max(1, Math.round(len / 2));
       for (let j = 0; j <= n; j++) {
         const t = (j / n) * len;
-        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.16, 0.4, -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.16));
+        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.16, 0.4 + heightAt(w.ax, w.ay), -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.16));
         q.identity();
         scl.set(1, 1, 1);
         m4.compose(pos, q, scl);

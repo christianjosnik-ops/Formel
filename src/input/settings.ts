@@ -23,6 +23,8 @@ export interface Settings {
   field: number;
   autoAero: boolean;
   trackLimits: boolean;
+  /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
+  wear: number;
 }
 
 const KEY = 'formel.settings.v2';
@@ -49,6 +51,7 @@ export const DEFAULTS: Settings = {
   field: 22,
   autoAero: true,
   trackLimits: false,
+  wear: 1,
 };
 
 export function loadSettings(): Settings {

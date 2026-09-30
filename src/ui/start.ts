@@ -1,6 +1,7 @@
 import { DRIVERS, TEAMS, teamOf, teamPerformance } from '../race/field';
 import { saveSettings, type Settings } from '../input/settings';
 import { createMap, MAP_LIST, type MapId } from '../world/maps';
+import { buy, MAX_LEVEL, UPGRADE_INFO, upgradeCost, type Career } from '../career';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -24,6 +25,8 @@ const SELECTS: Array<{ id: string; label: string; opts: Array<[string, string]>;
   { id: 'grid', label: 'Startplatz', opts: [['pole', 'Pole Position'], ['mid', 'Mittelfeld'], ['last', 'Letzter Platz'], ['random', 'Zufällig']], get: (s) => s.grid, set: (s, v) => (s.grid = v as Settings['grid']), only: ['race'] },
   { id: 'assist', label: 'Fahrhilfen', opts: [['2', 'Stark (Einsteiger)'], ['1', 'Mittel'], ['0', 'Aus (Profi)']], get: (s) => String(s.tc), set: (s, v) => { const n = Number(v); s.tc = n; s.abs = n === 0 ? 0 : 1; s.steerAssist = n; } },
   { id: 'control', label: 'Steuerung', opts: [['arrows', 'Pfeile rechts · Pedale links'], ['touch', 'Lenkband + Pedale'], ['tilt', 'Neigung']], get: (s) => s.control, set: (s, v) => (s.control = v as Settings['control']) },
+  { id: 'wear', label: 'Reifenverschleiß', opts: [['0', 'Aus'], ['1', 'Normal'], ['2', 'Hoch (Boxenstopps)']], get: (s) => String(s.wear), set: (s, v) => (s.wear = Number(v)) },
+  { id: 'compound', label: 'Startreifen', opts: [['soft', 'Soft (schnell, verschleißt)'], ['medium', 'Medium'], ['hard', 'Hard (hält lange)']], get: (s) => (['soft', 'medium', 'hard'].includes(s.compound) ? s.compound : 'medium'), set: (s, v) => (s.compound = v as Settings['compound']) },
   { id: 'limits', label: 'Streckenlimits', opts: [['0', 'Aus'], ['1', 'Ein (ungültige Runden)']], get: (s) => (s.trackLimits ? '1' : '0'), set: (s, v) => (s.trackLimits = v === '1') },
   { id: 'quality', label: 'Grafik', opts: [['auto', 'Automatisch (60 FPS)'], ['high', 'Hoch'], ['low', 'Niedrig']], get: (s) => s.quality, set: (s, v) => (s.quality = v as Settings['quality']) },
 ];
@@ -75,7 +78,7 @@ function drawTrack(canvas: HTMLCanvasElement, id: MapId): number {
 }
 
 /** Hauptmenü: Modus, Strecke, Team/Fahrer, Einstellungen. */
-export function setupStart(settings: Settings, onGo: (mapChanged: boolean) => void): { show: () => void } {
+export function setupStart(settings: Settings, career: Career, onGo: (mapChanged: boolean) => void): { show: () => void } {
   const el = $('start');
   const loadedMap = settings.map;
   const tabs = document.querySelectorAll<HTMLButtonElement>('#mmTabs button');
@@ -84,6 +87,7 @@ export function setupStart(settings: Settings, onGo: (mapChanged: boolean) => vo
     tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
     panels.forEach((p) => p.classList.toggle('panel-on', p.dataset.panel === name));
     if (name === 'track') buildTracks();
+    if (name === 'garage') buildGarage();
     $('mmBody').scrollTop = 0;
   };
   tabs.forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab!)));
@@ -184,6 +188,36 @@ export function setupStart(settings: Settings, onGo: (mapChanged: boolean) => vo
         box.appendChild(b);
       }
       teamBox.appendChild(box);
+    }
+  };
+
+  // ---- Werkstatt ----
+  const garageBox = $('garageCards');
+  const garageHead = $('garageHead');
+  const buildGarage = () => {
+    garageHead.innerHTML = `Guthaben <b>${career.money.toLocaleString('de-DE')} €</b><span>Preisgeld gibt es für Platzierungen in Rennen. Upgrades gelten für dein Auto.</span>`;
+    garageBox.innerHTML = '';
+    for (const u of UPGRADE_INFO) {
+      const lvl = career.up[u.id];
+      const c = document.createElement('div');
+      c.className = 'card';
+      const cost = upgradeCost(lvl);
+      const pips = Array.from({ length: MAX_LEVEL }, (_, k) => `<i class="${k < lvl ? 'on' : ''}"></i>`).join('');
+      c.innerHTML = `<span class="ico">${u.ico}</span><h3>${u.name}</h3><p>${u.per}</p><div class="pips">${pips}</div>`;
+      const b = document.createElement('button');
+      b.className = 'buy';
+      if (lvl >= MAX_LEVEL) {
+        b.textContent = 'MAX';
+        b.disabled = true;
+      } else {
+        b.textContent = `Stufe ${lvl + 1} · ${cost.toLocaleString('de-DE')} €`;
+        b.disabled = career.money < cost;
+      }
+      b.addEventListener('click', () => {
+        if (buy(career, u.id)) buildGarage();
+      });
+      c.appendChild(b);
+      garageBox.appendChild(c);
     }
   };
 

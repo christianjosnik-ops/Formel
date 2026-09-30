@@ -91,10 +91,20 @@
     <div id="board"></div>
     <div id="lights"><i></i><i></i><i></i><i></i><i></i></div>
     <div id="banner"></div>
+    <div id="pitMsg"></div>
+    <div id="tyrePanel">
+      <div id="tyreBadge">M</div>
+      <div id="tyreBars"><div class="tb"><i></i><b>VL</b></div><div class="tb"><i></i><b>VR</b></div><div class="tb"><i></i><b>HL</b></div><div class="tb"><i></i><b>HR</b></div></div>
+      <div id="pitCtl">
+        <div id="cmpSel"><button data-c="soft" class="c-soft">S</button><button data-c="medium" class="c-medium on">M</button><button data-c="hard" class="c-hard">H</button></div>
+        <button id="btnBox">BOX</button>
+      </div>
+    </div>
   </div>
   <div id="results" class="panel hidden">
     <h2 id="resTitle">Ergebnis</h2>
     <div id="resList"></div>
+    <div id="resPrize"></div>
     <div class="resBtns"><button id="resAgain">Neues Rennen</button><button id="resMenu">Hauptmenü</button></div>
   </div>
 
@@ -107,6 +117,7 @@
           <button data-tab="mode" class="on">Modus</button>
           <button data-tab="track">Strecke</button>
           <button data-tab="team">Team</button>
+          <button data-tab="garage">Werkstatt</button>
           <button data-tab="opts">Einstellungen</button>
         </nav>
       </header>
@@ -114,6 +125,7 @@
         <section data-panel="mode" class="panel-on"><div class="cards" id="modeCards"></div></section>
         <section data-panel="track"><div class="cards" id="trackCards"></div></section>
         <section data-panel="team"><div id="teamGrid"></div><div id="driverInfo"></div></section>
+        <section data-panel="garage"><div id="garageHead"></div><div class="cards" id="garageCards"></div></section>
         <section data-panel="opts"><div class="optGrid" id="optGrid"></div></section>
       </main>
       <footer>
