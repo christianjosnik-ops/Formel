@@ -13,7 +13,7 @@ export interface Settings {
   tiltRange: number;
   tiltInvert: boolean;
   quality: 'auto' | 'high' | 'low';
-  mode: 'race' | 'free';
+  mode: 'race' | 'weekend' | 'free';
   laps: number;
   /** -1 = keine KI, sonst Index in AI_LEVELS. */
   aiLevel: number;
@@ -22,6 +22,7 @@ export interface Settings {
   driver: number;
   field: number;
   autoAero: boolean;
+  trackLimits: boolean;
 }
 
 const KEY = 'formel.settings.v2';
@@ -47,6 +48,7 @@ export const DEFAULTS: Settings = {
   driver: 0,
   field: 22,
   autoAero: true,
+  trackLimits: false,
 };
 
 export function loadSettings(): Settings {

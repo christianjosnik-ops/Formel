@@ -19,6 +19,8 @@ export interface RaceConfig {
   field: number;
   grid: GridMode;
   seed: number;
+  /** Startaufstellung als Fahrer-Indizes (Pole zuerst), z. B. aus dem Qualifying. */
+  gridOrder?: number[];
   /** Spielerauto von der KI fahren lassen (Tests/Demo). */
   autopilot?: boolean;
 }
@@ -183,8 +185,14 @@ export class RaceDirector {
         slot = Math.floor(this.rnd() * n);
         break;
     }
-    const grid: Entrant[] = ai.map((s) => s.e);
+    let grid: Entrant[] = ai.map((s) => s.e);
     grid.splice(Math.min(slot, grid.length), 0, player);
+    if (this.cfg.gridOrder) {
+      const byDriver = new Map(this.entrants.map((e) => [e.driver, e]));
+      const ordered = this.cfg.gridOrder.map((d) => byDriver.get(d)).filter((e): e is Entrant => !!e);
+      for (const e of grid) if (!ordered.includes(e)) ordered.push(e);
+      grid = ordered;
+    }
     this.order.length = 0;
     for (let g = 0; g < grid.length; g++) {
       const e = grid[g];

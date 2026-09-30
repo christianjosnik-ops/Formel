@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { TEST_CAR_2026 } from './config/car';
 import teams from './data/teams.json';
 import { DRIVERS, teamOf } from './race/field';
-import type { RaceConfig } from './race/race';
+import { AI_LEVELS, driverPace } from './race/field';
+import { RacingLine } from './race/line';
+import { selectField, type RaceConfig } from './race/race';
+import { fmtTime } from './ui/race';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -123,7 +126,7 @@ function updateAi(dt: number, s: Float64Array): void {
   }
 }
 
-function raceConfig(): RaceConfig {
+function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
   return {
     laps: settings.laps,
     aiLevel: Math.max(0, settings.aiLevel),
@@ -131,33 +134,65 @@ function raceConfig(): RaceConfig {
     field: settings.aiLevel < 0 ? 1 : settings.field,
     grid: settings.grid,
     seed: (Date.now() & 0xffff) + 1,
+    ...over,
   };
 }
 function applyControlClass(): void {
   document.body.classList.toggle('arrows', settings.control === 'arrows');
   document.body.classList.toggle('tilt', settings.control === 'tilt');
 }
-function startGame(): void {
-  const race = settings.mode === 'race';
+let lineCache: RacingLine | null = null;
+/** Qualifying-Zeiten der KI: Profilzeit der Ideallinie, reale Fahrzeit (Faktor), Team-/Fahrerabstand, Rauschen. */
+function qualiGrid(cfg: RaceConfig, playerBest: number): { order: number[]; rows: Array<{ pos: number; name: string; color: string; time: string; gap: string; me: boolean }> } {
+  lineCache ??= new RacingLine(gameMap.track!);
+  const level = AI_LEVELS[Math.min(AI_LEVELS.length - 1, cfg.aiLevel)];
+  const ids = selectField({ ...cfg, field: settings.aiLevel < 0 ? 1 : settings.field });
+  let seed = cfg.seed;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const list = ids.map((id, k) => {
+    const d = DRIVERS[id];
+    const t = teamOf(d);
+    const time = k === 0 ? (playerBest > 0 ? playerBest : 999) : (lineCache!.lapTime(1) * 1.165) / (level.pace * driverPace(d)) + t.gap * 0.9 + (98 - d.pace) * 0.04 + (rnd() - 0.5) * 0.5;
+    return { id, d, t, time, me: k === 0 };
+  });
+  list.sort((a, b) => a.time - b.time);
+  const pole = list[0].time;
+  return {
+    order: list.map((x) => x.id),
+    rows: list.map((x, i) => ({ pos: i + 1, name: x.d.name, color: x.t.colors.primary, time: x.time >= 999 ? 'keine Zeit' : fmtTime(x.time), gap: i === 0 ? '' : `+${(x.time - pole).toFixed(3)}`, me: x.me })),
+  };
+}
+function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {}): void {
+  const race = kind !== 'free';
   if (race) settings.team = teamOf(DRIVERS[settings.driver] ?? DRIVERS[0]).id;
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(race ? raceConfig() : undefined);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined);
   physics.setBrakeBias(settings.brakeBias);
-  raceHud.setActive(race);
+  raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
   document.body.classList.toggle('race', race);
   if (race) {
     settings.telemetry = false;
     hud.setTelemetryVisible(false);
     (document.getElementById('chkTelemetry') as HTMLInputElement).checked = false;
   }
+  lapTimer.enforceLimits = settings.trackLimits;
   lapTimer.reset(0);
   const cam = settings.camera === 'showroom' ? 'chase' : settings.camera;
   rig.setMode(cam, car);
   document.body.classList.remove('showroom');
   (document.getElementById('selTeam') as HTMLSelectElement).value = settings.team;
 }
+function startGame(): void {
+  launch(settings.mode === 'weekend' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
+}
+raceHud.onQuali = (best) => {
+  const cfg = raceConfig();
+  const g = qualiGrid(cfg, best);
+  const pos = g.rows.findIndex((r) => r.me) + 1;
+  raceHud.showTable(`Qualifying – Startplatz ${pos}`, g.rows, 'Weiter zum Rennen', () => launch('race', { gridOrder: g.order }));
+};
 const start = setupStart(settings, (mapChanged) => {
   if (mapChanged) {
     try {
@@ -363,7 +398,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; } };
+(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

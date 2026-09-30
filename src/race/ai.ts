@@ -225,8 +225,8 @@ export class AIDriver {
       inp.brake = 0;
     }
     // Aktive Aero: X-Modus, wenn auf den nächsten 250 m nichts Enges kommt
-    let straight = speed > 45;
-    for (let k = 1; k <= 60 && straight; k += 6) if (line.speed[(idx + k) % n] < 78) straight = false;
+    let straight = speed > 40;
+    for (let k = 1; k <= 45 && straight; k += 5) if (line.speed[(idx + k) % n] < 66) straight = false;
     inp.aeroX = straight && inp.brake === 0 ? 1 : 0;
 
     // ---- Steckenbleiben erkennen ----

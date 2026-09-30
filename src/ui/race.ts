@@ -27,15 +27,25 @@ export class RaceHud {
   private finishedShown = false;
   private prevState = -1;
   private lastLap = 0;
+  kind: 'race' | 'quali' = 'race';
+  onQuali: (best: number) => void = () => {};
   onAgain: () => void = () => {};
   onMenu: () => void = () => {};
 
   constructor() {
-    $('resAgain').addEventListener('click', () => this.onAgain());
+    $('resAgain').addEventListener('click', () => {
+      $('results').classList.add('hidden');
+      const a = this.tableAction;
+      this.tableAction = null;
+      $('resTitle').textContent = 'Ergebnis';
+      if (a) a();
+      else this.onAgain();
+    });
     $('resMenu').addEventListener('click', () => this.onMenu());
   }
 
-  setActive(on: boolean): void {
+  setActive(on: boolean, kind: 'race' | 'quali' = 'race'): void {
+    this.kind = kind;
     $('race').classList.toggle('hidden', !on);
     if (!on) {
       $('results').classList.add('hidden');
@@ -66,12 +76,13 @@ export class RaceHud {
     }
     const total = me[S.raceLaps];
     const lap = Math.min(total, Math.max(1, me[S.raceLap]));
-    $('raceLap').textContent = `RUNDE ${lap}/${total}`;
-    if (total > 1 && lap === total && this.lastLap < total && state === 1) this.say('LETZTE RUNDE', 1.8);
+    const q = this.kind === 'quali';
+    $('raceLap').textContent = q ? `QUALIFYING · RUNDE ${lap}/${total}` : `RUNDE ${lap}/${total}`;
+    if (!q && total > 1 && lap === total && this.lastLap < total && state === 1) this.say('LETZTE RUNDE', 1.8);
     this.lastLap = lap;
-    $('racePos').textContent = `P${me[S.racePos]}/${n}`;
+    $('racePos').textContent = q ? (me[S.raceBest] > 0 ? `Beste ${fmtTime(me[S.raceBest])}` : 'Beste –') : `P${me[S.racePos]}/${n}`;
     if (me[S.raceFinished] > 0.5 && state === 1 && !this.finishedShown) {
-      this.say(`ZIEL · P${me[S.racePos]}`, 99);
+      this.say(q ? 'QUALIFYING BEENDET' : `ZIEL · P${me[S.racePos]}`, 99);
     }
 
     this.acc += dt;
@@ -82,9 +93,22 @@ export class RaceHud {
     if (state === 2 && !this.finishedShown) {
       this.finishedShown = true;
       this.banner('');
-      this.results(physics, n);
+      if (q) this.onQuali(me[S.raceBest]);
+      else this.results(physics, n);
     }
   }
+
+  /** Ergebnistafel (z. B. Qualifying) mit Weiter-Knopf. */
+  showTable(title: string, rows: Array<{ pos: number; name: string; color: string; time: string; gap: string; me: boolean }>, button: string, action: () => void): void {
+    $('resTitle').textContent = title;
+    let html = `<div class="rrow"><span></span><span></span><span></span><span>Zeit</span><span>Abstand</span></div>`;
+    for (const r of rows) html += `<div class="rrow${r.me ? ' me' : ''}"><span>${r.pos}</span><span class="bar" style="background:${r.color}"></span><span>${r.name}</span><span>${r.time}</span><span>${r.gap}</span></div>`;
+    $('resList').innerHTML = html;
+    $('resAgain').textContent = button;
+    this.tableAction = action;
+    $('results').classList.remove('hidden');
+  }
+  tableAction: (() => void) | null = null;
 
   private say(t: string, sec: number): void {
     $('banner').textContent = t;
@@ -143,6 +167,8 @@ export class RaceHud {
       const best = r[S.raceBest] > 0 ? fmtTime(r[S.raceBest]) : '';
       html += `<div class="rrow${me ? ' me' : ''}"><span>${r[S.racePos]}</span><span class="bar" style="background:${t.colors.primary}"></span><span>${d.name}</span><span>${fmtGap(r as Float64Array)}</span><span>${best}</span></div>`;
     }
+    $('resTitle').textContent = 'Ergebnis';
+    $('resAgain').textContent = 'Neues Rennen';
     $('resList').innerHTML = `<div class="rrow"><span></span><span></span><span></span><span>Abstand</span><span>Beste</span></div>${html}`;
     $('results').classList.remove('hidden');
   }

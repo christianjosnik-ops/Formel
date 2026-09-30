@@ -254,7 +254,7 @@ export const TEST_CAR_2026: CarConfig = {
     yawDrag: 2.0,
   },
   engine: {
-    iceMaxPower: 400e3,
+    iceMaxPower: 450e3,
     idleRpm: 4500,
     revLimit: 15000,
     launchRpm: 8500,
@@ -278,10 +278,10 @@ export const TEST_CAR_2026: CarConfig = {
     vTaperStart: 290 / 3.6,
     vTaperEnd: 355 / 3.6,
     efficiency: 0.95,
-    batteryCapacity: 4.0e6,
-    batteryStart: 3.6e6,
+    batteryCapacity: 8.0e6,
+    batteryStart: 7.2e6,
     regenMaxPower: 350e3,
-    coastRegenPower: 60e3,
+    coastRegenPower: 150e3,
   },
   drivetrain: {
     ratios: [14.0, 11.3, 9.35, 7.9, 6.8, 5.95, 5.3, 4.8],
