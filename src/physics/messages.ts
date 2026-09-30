@@ -1,6 +1,8 @@
+import type { MapId } from '../world/maps';
 import type { DriverInput } from './vehicle';
 
 export type ToWorker =
+  | { type: 'init'; map: MapId }
   | { type: 'input'; input: Partial<DriverInput> }
   | { type: 'reset'; x: number; y: number; psi: number; speed: number }
   | { type: 'recycle'; buf: Float64Array }

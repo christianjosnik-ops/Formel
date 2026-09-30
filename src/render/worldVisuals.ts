@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BODY_CONE, BODY_STRIDE, MAX_BODIES, S } from '../physics/layout';
-import type { SurfaceKind, World2D } from '../world/provingGround';
+import type { SurfaceKind, WallDef, World2D } from '../world/provingGround';
 
 const TILE = 8;
 
@@ -42,11 +42,18 @@ const TEX: Record<SurfaceKind, () => THREE.CanvasTexture> = {
   gravel: () => noiseTexture([150, 140, 122], 70, [[220, 210, 190], [90, 84, 72], [180, 170, 150]], 77),
   grass: () => noiseTexture([72, 104, 52], 36, [[40, 80, 30], [120, 150, 70], [90, 120, 50]], 91),
   sand: () => noiseTexture([206, 184, 140], 26, [[230, 210, 170], [170, 150, 110]], 5),
+  kerb: () => noiseTexture([200, 200, 200], 10, [[255, 255, 255]], 3),
 };
 
 export function grassTexture(): THREE.CanvasTexture {
   return TEX.grass();
 }
+
+export function surfaceTexture(kind: SurfaceKind): THREE.CanvasTexture {
+  return TEX[kind]();
+}
+
+export { concreteTexture };
 
 function concreteTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -73,98 +80,46 @@ function concreteTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export interface WorldVisuals {
-  /** Setzt die Kegel gemäß Snapshot (bewegte Kegel) und stellt alle anderen an ihren Platz. */
-  updateCones: (snap: Float64Array) => void;
+function tireWallTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#101012';
+  g.fillRect(0, 0, 512, 128);
+  const cols = ['#d52027', '#f1f1f1', '#1d1d20', '#1a4fb5'];
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 16; i++) {
+      const x = i * 32 + (row % 2) * 16;
+      const y = 4 + row * 40;
+      g.fillStyle = '#1a1a1c';
+      g.beginPath();
+      g.ellipse(x + 16, y + 18, 15, 17, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = cols[(i + row) % 4];
+      g.lineWidth = 5;
+      g.beginPath();
+      g.ellipse(x + 16, y + 18, 13, 15, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = '#050506';
+      g.beginPath();
+      g.ellipse(x + 16, y + 18, 6, 7, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(0.35, 1);
+  t.anisotropy = 4;
+  return t;
 }
 
-/** Erzeugt die sichtbare Welt aus den Kartendaten (Untergründe, Wände, Kegel, Markierungen). */
-export function buildWorldVisuals(scene: THREE.Scene, map: World2D): WorldVisuals {
-  // ---- Untergründe ----
-  const layer: Record<SurfaceKind, number> = { asphalt: 0.004, gravel: 0.007, sand: 0.008, grass: 0 };
-  const texCache = new Map<SurfaceKind, THREE.CanvasTexture>();
-  for (const r of map.surfaces) {
-    if (!texCache.has(r.kind)) texCache.set(r.kind, TEX[r.kind]());
-    const base = texCache.get(r.kind)!;
-    const tex = base.clone();
-    tex.needsUpdate = true;
-    const w = r.x1 - r.x0;
-    const h = r.y1 - r.y0;
-    tex.repeat.set(w / TILE, h / TILE);
-    const m = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ map: tex, roughness: r.kind === 'asphalt' ? 0.9 : 1, metalness: 0 }),
-    );
-    m.rotation.x = -Math.PI / 2;
-    m.position.set((r.x0 + r.x1) / 2, layer[r.kind], -(r.y0 + r.y1) / 2);
-    m.receiveShadow = true;
-    scene.add(m);
-  }
-
-  // ---- Markierungen auf der Hauptgerade ----
-  const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  {
-    const cvs = document.createElement('canvas');
-    cvs.width = 128;
-    cvs.height = 32;
-    const g = cvs.getContext('2d')!;
-    for (let y = 0; y < 4; y++) for (let x = 0; x < 16; x++) {
-      g.fillStyle = (x + y) % 2 ? '#111' : '#f2f2f2';
-      g.fillRect(x * 8, y * 8, 8, 8);
-    }
-    const ct = new THREE.CanvasTexture(cvs);
-    ct.colorSpace = THREE.SRGBColorSpace;
-    const grid = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 16), new THREE.MeshBasicMaterial({ map: ct }));
-    grid.rotation.x = -Math.PI / 2;
-    grid.position.set(-1.0, 0.012, 0);
-    scene.add(grid);
-    for (const z of [-8.6, 8.6]) {
-      const line = new THREE.Mesh(new THREE.PlaneGeometry(1920, 0.25), white);
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(440, 0.012, z);
-      scene.add(line);
-    }
-    const dash = new THREE.InstancedMesh(new THREE.PlaneGeometry(6, 0.18), white, 160);
-    const m4 = new THREE.Matrix4();
-    for (let i = 0; i < 160; i++) {
-      m4.makeRotationX(-Math.PI / 2);
-      m4.setPosition(-500 + i * 12, 0.012, 0);
-      dash.setMatrixAt(i, m4);
-    }
-    scene.add(dash);
-    // Entfernungstafeln
-    for (let d = 100; d <= 1200; d += 100) {
-      const c2 = document.createElement('canvas');
-      c2.width = 256;
-      c2.height = 128;
-      const g2 = c2.getContext('2d')!;
-      g2.fillStyle = '#ffffff';
-      g2.fillRect(0, 0, 256, 128);
-      g2.fillStyle = '#c00000';
-      g2.fillRect(0, 0, 256, 14);
-      g2.fillStyle = '#111';
-      g2.font = 'bold 84px Arial';
-      g2.textAlign = 'center';
-      g2.textBaseline = 'middle';
-      g2.fillText(String(d), 128, 72);
-      const tex = new THREE.CanvasTexture(c2);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      for (const side of [-1, 1]) {
-        const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
-        board.position.set(d, 2.6, 11 * side);
-        board.rotation.y = -Math.PI / 2;
-        scene.add(board);
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), new THREE.MeshBasicMaterial({ color: 0x333333 }));
-        post.position.set(d, 1.3, 11 * side);
-        scene.add(post);
-      }
-    }
-  }
-
-  // ---- Wände ----
-  const concrete = map.walls.filter((w) => w.kind === 'concrete');
-  const tires = map.walls.filter((w) => w.kind === 'tire');
-  const armco = map.walls.filter((w) => w.kind === 'armco');
+/** Baut Betonwände, Reifenbarrieren und Leitplanken. Bei tireBox werden Reifenwände als texturierte Box gezeichnet (günstig für lange Strecken). */
+export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false): void {
+  const concrete = walls.filter((w) => w.kind === 'concrete');
+  const tires = walls.filter((w) => w.kind === 'tire');
+  const armco = walls.filter((w) => w.kind === 'armco');
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const pos = new THREE.Vector3();
@@ -188,7 +143,21 @@ export function buildWorldVisuals(scene: THREE.Scene, map: World2D): WorldVisual
     });
     scene.add(mesh);
   }
-  if (tires.length) {
+  if (tires.length && tireBox) {
+    const tt = tireWallTexture();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1.05, 1.5), new THREE.MeshStandardMaterial({ map: tt, roughness: 0.95 }), tires.length);
+    mesh.receiveShadow = true;
+    tires.forEach((w, i) => {
+      const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
+      const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525, -((w.ay + w.by) / 2 - w.ny * 0.75));
+      q.setFromAxisAngle(up, ang);
+      scl.set(len, 1, 1);
+      m4.compose(pos, q, scl);
+      mesh.setMatrixAt(i, m4);
+    });
+    scene.add(mesh);
+  } else if (tires.length) {
     // gestapelte Reifen: 3 Reihen tief, 3 Lagen hoch
     const geo = new THREE.CylinderGeometry(0.34, 0.34, 0.3, 10);
     const rows = 3;
@@ -254,6 +223,103 @@ export function buildWorldVisuals(scene: THREE.Scene, map: World2D): WorldVisual
     });
     scene.add(rail, postMesh);
   }
+
+}
+
+export interface WorldVisuals {
+  setDetail?: (f: number) => void;
+  /** Setzt die Kegel gemäß Snapshot (bewegte Kegel) und stellt alle anderen an ihren Platz. */
+  updateCones: (snap: Float64Array) => void;
+}
+
+/** Erzeugt die sichtbare Welt aus den Kartendaten (Untergründe, Wände, Kegel, Markierungen). */
+export function buildWorldVisuals(scene: THREE.Scene, map: World2D, markings = true): WorldVisuals {
+  // ---- Untergründe ----
+  const layer: Record<SurfaceKind, number> = { asphalt: 0.004, gravel: 0.007, sand: 0.008, grass: 0, kerb: 0.006 };
+  const texCache = new Map<SurfaceKind, THREE.CanvasTexture>();
+  for (const r of map.surfaces) {
+    if (!texCache.has(r.kind)) texCache.set(r.kind, TEX[r.kind]());
+    const base = texCache.get(r.kind)!;
+    const tex = base.clone();
+    tex.needsUpdate = true;
+    const w = r.x1 - r.x0;
+    const h = r.y1 - r.y0;
+    tex.repeat.set(w / TILE, h / TILE);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: r.kind === 'asphalt' ? 0.9 : 1, metalness: 0 }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.set((r.x0 + r.x1) / 2, layer[r.kind], -(r.y0 + r.y1) / 2);
+    m.receiveShadow = true;
+    scene.add(m);
+  }
+
+  // ---- Markierungen auf der Hauptgerade ----
+  const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  if (markings) {
+    const cvs = document.createElement('canvas');
+    cvs.width = 128;
+    cvs.height = 32;
+    const g = cvs.getContext('2d')!;
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 16; x++) {
+      g.fillStyle = (x + y) % 2 ? '#111' : '#f2f2f2';
+      g.fillRect(x * 8, y * 8, 8, 8);
+    }
+    const ct = new THREE.CanvasTexture(cvs);
+    ct.colorSpace = THREE.SRGBColorSpace;
+    const grid = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 16), new THREE.MeshBasicMaterial({ map: ct }));
+    grid.rotation.x = -Math.PI / 2;
+    grid.position.set(-1.0, 0.012, 0);
+    scene.add(grid);
+    for (const z of [-8.6, 8.6]) {
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(1920, 0.25), white);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(440, 0.012, z);
+      scene.add(line);
+    }
+    const dash = new THREE.InstancedMesh(new THREE.PlaneGeometry(6, 0.18), white, 160);
+    const m4 = new THREE.Matrix4();
+    for (let i = 0; i < 160; i++) {
+      m4.makeRotationX(-Math.PI / 2);
+      m4.setPosition(-500 + i * 12, 0.012, 0);
+      dash.setMatrixAt(i, m4);
+    }
+    scene.add(dash);
+    // Entfernungstafeln
+    for (let d = 100; d <= 1200; d += 100) {
+      const c2 = document.createElement('canvas');
+      c2.width = 256;
+      c2.height = 128;
+      const g2 = c2.getContext('2d')!;
+      g2.fillStyle = '#ffffff';
+      g2.fillRect(0, 0, 256, 128);
+      g2.fillStyle = '#c00000';
+      g2.fillRect(0, 0, 256, 14);
+      g2.fillStyle = '#111';
+      g2.font = 'bold 84px Arial';
+      g2.textAlign = 'center';
+      g2.textBaseline = 'middle';
+      g2.fillText(String(d), 128, 72);
+      const tex = new THREE.CanvasTexture(c2);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      for (const side of [-1, 1]) {
+        const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+        board.position.set(d, 2.6, 11 * side);
+        board.rotation.y = -Math.PI / 2;
+        scene.add(board);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), new THREE.MeshBasicMaterial({ color: 0x333333 }));
+        post.position.set(d, 1.3, 11 * side);
+        scene.add(post);
+      }
+    }
+  }
+
+  buildWalls(scene, map.walls, false);
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const pos = new THREE.Vector3();
+  const scl = new THREE.Vector3();
 
   // ---- Kegel (beweglich) ----
   const nCones = map.cones.length;

@@ -5,7 +5,7 @@ import type { FromWorker, ToWorker } from './messages';
 import { SNAP_SIZE, S } from './layout';
 import { Vehicle } from './vehicle';
 import { World } from './world';
-import { buildProvingGround } from '../world/provingGround';
+import { createMap } from '../world/maps';
 
 /**
  * Physik-Worker: feste Schrittweite mit Zeitakkumulator, unabhängig von der Renderrate.
@@ -14,7 +14,7 @@ import { buildProvingGround } from '../world/provingGround';
  */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const car = new Vehicle(TEST_CAR_2026);
-const world = new World(buildProvingGround(), [car]);
+let world: World | null = null;
 const pool: Float64Array[] = [];
 let paused = false;
 let acc = 0;
@@ -25,7 +25,7 @@ let lastPost = 0;
 
 function post(): void {
   const buf = pool.pop() ?? new Float64Array(SNAP_SIZE);
-  world.writeSnapshot(buf, 0);
+  world!.writeSnapshot(buf, 0);
   buf[S.stepMs] = stepMsAvg;
   buf[S.hz] = hzAvg;
   const msg: FromWorker = { type: 'snap', buf };
@@ -37,7 +37,9 @@ function tick(): void {
   let elapsed = (now - last) / 1000;
   last = now;
   if (elapsed > 0.25) elapsed = 0.25;
-  if (!paused) {
+  if (!world) {
+    acc = 0;
+  } else if (!paused) {
     acc += elapsed;
     const dt = PHYS.dt;
     let steps = 0;
@@ -67,11 +69,19 @@ function tick(): void {
 ctx.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   switch (m.type) {
+    case 'init': {
+      const map = createMap(m.map);
+      world = new World(map.world, [car]);
+      world.reset(0, map.start.x, map.start.y, map.start.psi, 0);
+      const ready: FromWorker = { type: 'ready', hz: PHYS.hz };
+      ctx.postMessage(ready);
+      break;
+    }
     case 'input':
       Object.assign(car.input, m.input);
       break;
     case 'reset':
-      world.reset(0, m.x, m.y, m.psi, m.speed);
+      world?.reset(0, m.x, m.y, m.psi, m.speed);
       break;
     case 'recycle':
       if (pool.length < 6) pool.push(m.buf);
@@ -80,7 +90,7 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
       paused = m.paused;
       break;
     case 'repair':
-      world.repair(0);
+      world?.repair(0);
       break;
     case 'brakeBias':
       car.cfg.brakes.bias = m.bias;
@@ -88,6 +98,4 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
   }
 };
 
-const ready: FromWorker = { type: 'ready', hz: PHYS.hz };
-ctx.postMessage(ready);
 tick();

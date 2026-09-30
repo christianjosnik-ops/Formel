@@ -1,5 +1,6 @@
 import type { FromWorker, ToWorker } from './messages';
 import { BODY_STRIDE, MAX_BODIES, SNAP_SIZE, S } from './layout';
+import type { MapId } from '../world/maps';
 import type { DriverInput } from './vehicle';
 
 /**
@@ -17,8 +18,9 @@ export class PhysicsClient {
   private haveOffset = false;
   private readonly delay = 0.022;
 
-  constructor() {
+  constructor(mapId: MapId) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    this.send({ type: 'init', map: mapId });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => {
       const m = e.data;
       if (m.type === 'ready') {

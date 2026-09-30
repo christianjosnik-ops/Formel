@@ -4,7 +4,7 @@
  * Streckenbasierte Welten (Phase 3) liefern dieselben Strukturen aus den Streckendaten.
  */
 
-export type SurfaceKind = 'asphalt' | 'gravel' | 'grass' | 'sand';
+export type SurfaceKind = 'asphalt' | 'gravel' | 'grass' | 'sand' | 'kerb';
 
 export interface SurfaceParams {
   /** Gripfaktor der Reifen. */
@@ -20,6 +20,7 @@ export const SURFACES: Record<SurfaceKind, SurfaceParams> = {
   gravel: { grip: 0.52, roll: 0.2, dust: 0.9 },
   grass: { grip: 0.42, roll: 0.055, dust: 0.25 },
   sand: { grip: 0.48, roll: 0.3, dust: 1 },
+  kerb: { grip: 0.94, roll: 0.012, dust: 0 },
 };
 
 export interface SurfaceRect {
@@ -77,6 +78,8 @@ export interface ConeDef {
 
 export interface World2D {
   surfaces: SurfaceRect[];
+  /** Optional: berechnete Untergrundkarte (Strecken). Hat Vorrang vor `surfaces`. */
+  surfaceFn?: (x: number, y: number) => SurfaceKind;
   walls: WallDef[];
   cones: ConeDef[];
 }
@@ -150,6 +153,7 @@ export function buildProvingGround(): World2D {
 
 /** Untergrund an einer Position (letzter passender Eintrag gewinnt, Standard: Gras). */
 export function surfaceAt(world: World2D, x: number, y: number): SurfaceKind {
+  if (world.surfaceFn) return world.surfaceFn(x, y);
   const s = world.surfaces;
   for (let i = s.length - 1; i >= 0; i--) {
     const r = s[i];

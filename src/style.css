@@ -135,3 +135,15 @@ body.showroom #pads, body.showroom #bars { display: none; }
 #btnRepair { width: 100%; font-size: 12px; padding: 6px 8px; pointer-events: auto; }
 @media (max-height: 520px) { #damage { transform: scale(.78); transform-origin: top right; } }
 body.showroom #damage { display: none; }
+
+/* ---------- Runde und Minimap ---------- */
+#lap { position: absolute; top: calc(34px + var(--safe-t)); left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 2px 8px rgba(0,0,0,.65); font-variant-numeric: tabular-nums; }
+#lapNo { font-size: 11px; letter-spacing: 2px; color: var(--mut); font-weight: 700; }
+#lapTime { font-size: 26px; font-weight: 800; line-height: 1.1; }
+#lapInfo { font-size: 12px; color: #cfd6dc; margin-top: 2px; }
+#lapWarn { font-size: 12px; font-weight: 800; color: var(--amb); min-height: 15px; letter-spacing: .5px; }
+#lapWarn.bad { color: var(--red); }
+#lap.invalid #lapTime { color: var(--red); }
+#minimap { position: absolute; left: calc(10px + var(--safe-l)); bottom: calc(184px + var(--safe-b)); width: 170px; height: 120px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px solid var(--line); }
+body.showroom #minimap, body.showroom #lap { display: none; }
+@media (max-height: 520px) { #minimap { width: 130px; height: 92px; bottom: calc(150px + var(--safe-b)); } #lapTime { font-size: 20px; } }

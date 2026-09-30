@@ -21,6 +21,13 @@
   <!-- HUD -->
   <div id="hud">
     <div id="shiftlights"></div>
+    <div id="lap">
+      <div id="lapNo">RUNDE 1</div>
+      <div id="lapTime">0:00.000</div>
+      <div id="lapInfo"><span id="lapLast">–</span> · <span id="lapBest">–</span></div>
+      <div id="lapWarn"></div>
+    </div>
+    <canvas id="minimap" width="170" height="120"></canvas>
     <div id="dash">
       <div id="gear">N</div>
       <div id="speed"><span id="speedVal">0</span><small>km/h</small></div>
@@ -81,6 +88,10 @@
     <div class="scroll">
       <h2>Einstellungen <button id="menuClose">✕</button></h2>
 
+      <h3>Strecke</h3>
+      <div class="row"><label>Strecke</label><select id="selMap"></select></div>
+      <p class="muted">Der Wechsel lädt die Seite neu.</p>
+
       <h3>Steuerung</h3>
       <div class="row">
         <label>Lenkung</label>
@@ -106,7 +117,7 @@
       <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
 
       <h3>Anzeige</h3>
-      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="cockpit">Cockpit</option><option value="tv">TV</option><option value="showroom">Showroom</option></select></div>
+      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="cockpit">Cockpit</option><option value="tv">TV</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
       <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
       <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
       <p class="muted" id="buildInfo"></p>

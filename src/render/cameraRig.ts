@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { S } from '../physics/layout';
 import type { CarModel } from './carModel';
 
-export type CameraMode = 'chase' | 'cockpit' | 'tv' | 'showroom';
-export const CAMERA_MODES: CameraMode[] = ['chase', 'cockpit', 'tv', 'showroom'];
+export type CameraMode = 'chase' | 'cockpit' | 'tv' | 'heli' | 'showroom';
+export const CAMERA_MODES: CameraMode[] = ['chase', 'cockpit', 'tv', 'heli', 'showroom'];
 
 export class CameraRig {
   mode: CameraMode = 'chase';
@@ -134,6 +134,21 @@ export class CameraRig {
         this.look.set(px, 0.6, pz);
         const dd = this.pos.distanceTo(this.look);
         targetFov = Math.max(14, Math.min(55, 1200 / Math.max(dd, 12)));
+        break;
+      }
+      case 'heli': {
+        if (!this.yawInit) {
+          this.yaw = psi;
+          this.yawInit = true;
+        }
+        let d = psi - this.yaw;
+        d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+        this.yaw += d * Math.min(1, dt * 1.6);
+        const fx = Math.cos(this.yaw);
+        const fz = -Math.sin(this.yaw);
+        this.pos.set(px - fx * 70, 48 + Math.min(speed, 90) * 0.15, pz - fz * 70);
+        this.look.set(px + fx * 25, 0, pz + fz * 25);
+        targetFov = 52;
         break;
       }
       case 'showroom': {

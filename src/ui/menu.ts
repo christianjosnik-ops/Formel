@@ -1,4 +1,5 @@
 import teams from '../data/teams.json';
+import { MAP_LIST } from '../world/maps';
 import type { Controls } from '../input/controls';
 import { saveSettings, type Settings } from '../input/settings';
 
@@ -52,6 +53,20 @@ export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHoo
   bindSelect('selQuality', () => settings.quality, (v) => {
     settings.quality = v as Settings['quality'];
     hooks.onQualityChanged();
+  });
+
+  const mapSel = $<HTMLSelectElement>('selMap');
+  for (const m of MAP_LIST) {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.name;
+    mapSel.appendChild(o);
+  }
+  mapSel.value = settings.map;
+  mapSel.addEventListener('change', () => {
+    settings.map = mapSel.value as Settings['map'];
+    persist();
+    location.reload();
   });
 
   const teamSel = $<HTMLSelectElement>('selTeam');

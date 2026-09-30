@@ -1,4 +1,5 @@
 import './style.css';
+import * as THREE from 'three';
 import { TEST_CAR_2026 } from './config/car';
 import teams from './data/teams.json';
 import drivers from './data/drivers.json';
@@ -14,7 +15,9 @@ import { CameraRig } from './render/cameraRig';
 import { createScene } from './render/scene';
 import { DebrisRenderer, Effects } from './render/effects';
 import { buildWorldVisuals } from './render/worldVisuals';
-import { buildProvingGround } from './world/provingGround';
+import { buildTrackVisuals } from './render/trackVisuals';
+import { createMap } from './world/maps';
+import { LapTimer } from './ui/lap';
 import { Hud } from './ui/hud';
 import { setupMenu } from './ui/menu';
 
@@ -23,12 +26,22 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const bundle = createScene(canvas);
 const { renderer, scene, camera } = bundle;
 
-const worldMap = buildProvingGround();
-const visuals = buildWorldVisuals(scene, worldMap);
+const gameMap = createMap(settings.map);
+const worldMap = gameMap.world;
+const visuals = gameMap.track ? buildTrackVisuals(scene, gameMap) : buildWorldVisuals(scene, worldMap, true);
+if (gameMap.track) {
+  // Strecke: Gelände ersetzt die mitlaufende Grasfläche; Dunst und große Sichtweite für Berge
+  bundle.ground.visible = false;
+  scene.fog = new THREE.Fog(gameMap.theme.fog, 650, 7200);
+  camera.near = 0.3;
+  camera.far = 9800;
+  camera.updateProjectionMatrix();
+}
 const effects = new Effects(scene, worldMap);
 let debris: DebrisRenderer | null = null;
+const lapTimer = new LapTimer(gameMap.track);
 
-const physics = new PhysicsClient();
+const physics = new PhysicsClient(settings.map);
 const controls = new Controls(settings);
 setupTouchPads(controls);
 const hud = new Hud();
@@ -80,7 +93,10 @@ const menu = setupMenu(settings, controls, {
 });
 document.getElementById('buildInfo')!.textContent = `Build ${__BUILD__}`;
 
-const resetCar = () => physics.reset(0, 0, 0, 0);
+const resetCar = () => {
+  physics.reset(gameMap.start.x, gameMap.start.y, gameMap.start.psi, 0);
+  lapTimer.reset(0);
+};
 const repairCar = () => physics.repair();
 controls.onRepair = repairCar;
 document.getElementById('btnRepair')!.addEventListener('click', repairCar);
@@ -112,6 +128,7 @@ const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 let pixelRatio = maxPixelRatio;
 let qualityLocked = settings.quality !== 'auto';
 function applyQuality(): void {
+  visuals.setDetail?.(settings.quality === 'low' ? 0.4 : 1);
   if (settings.quality === 'high') pixelRatio = maxPixelRatio;
   else if (settings.quality === 'low') pixelRatio = 1;
   bundle.setPixelRatio(pixelRatio);
@@ -165,6 +182,7 @@ function frame(now: number): void {
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
     hud.update(s, dt, settings.tc, settings.abs);
+    lapTimer.update(s);
     if (!loaded) {
       loaded = true;
       document.getElementById('loading')!.classList.add('gone');
@@ -198,6 +216,7 @@ function frame(now: number): void {
       } else if (lowCount >= 4 && renderer.shadowMap.enabled) {
         renderer.shadowMap.enabled = false;
         bundle.sun.castShadow = false;
+        visuals.setDetail?.(0.55);
         lowCount = 0;
       } else if (highCount >= 8 && pixelRatio < maxPixelRatio) {
         pixelRatio = Math.min(maxPixelRatio, pixelRatio + 0.25);
@@ -215,7 +234,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, get car() { return car; } };
+(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; } };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

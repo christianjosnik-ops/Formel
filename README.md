@@ -14,7 +14,7 @@ TypeScript, Vite, Three.js. Das Auto ist ein 3D-Modell (Blender, `docs/MODEL.md`
 src/config/      zentrale Konstanten (physics.ts) und Fahrzeugdaten (car.ts)
 src/physics/     reiner Simulationscode ohne DOM: Reifen, Aero, Antrieb, Fahrzeug, Worker
 src/render/      Three.js: Szene, F1-Modell (GLB), Gelände, Trümmer, Partikel, Kamera
-src/world/       Testgelände (Untergründe, Wände, Kegel), gemeinsam für Physik und Darstellung
+src/world/       Strecken (aus Streckendaten) und Testgelände, gemeinsam für Physik und Darstellung
 tools/           Modellkonvertierung (Blender nach GLB)
 src/input/       Touch, Neigung (iOS-Berechtigung), Gamepad, Tastatur, Einstellungen
 src/ui/          HUD, Telemetrie, Menü
@@ -45,6 +45,10 @@ Alles ist auch ohne lokalen Rechner testbar: Die GitHub Action führt Typecheck,
 | Tastatur | Pfeile/WASD, X Aero, R Reset, B Reparatur, C Kamera, T Telemetrie, M Menü |
 
 Fahrhilfen (Traktionskontrolle, ABS, Lenkhilfe) sind in drei Stufen einstellbar. Sie filtern nur die Eingaben, die Physik bleibt identisch.
+
+## Strecken
+
+Monza, Spa-Francorchamps und Silverstone aus den TUM-Streckendaten (LGPL-3.0), dazu das Crash-Testgelände. Kerbs, Kiesbetten, Barrieren, Tribünen, Startportal, Wälder, Hügel und Berge im Hintergrund, Rundenzeiten mit Streckenlimit und Minimap. Auswahl im Menü (Strecke). Details: `docs/TRACKS.md`.
 
 ## Crash-Physik
 
