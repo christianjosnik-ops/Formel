@@ -6,7 +6,7 @@ Pflicht ab Phase 3: Vergleich der simulierten KI-Runde mit echter Telemetrie (Fa
 
 Es liegt noch keine Strecke und keine echte Telemetrie vor. Die Plausibilitätswerte des Testautos (Unit-Tests in `tests/vehicle.test.ts`) dienen als Vorab-Check gegen bekannte Größenordnungen der Formel 1.
 
-| Kenngröße | Simulation | Referenzbereich F1 |
+| Kenngröße | Simulation | Grober Referenzbereich F1 (aus dem Gedächtnis, nicht gemessen) |
 |---|---|---|
 | 0 bis 100 km/h | 2,15 s | 2,4 bis 2,8 s |
 | 0 bis 200 km/h | 4,4 s | 4,6 bis 5,6 s |
