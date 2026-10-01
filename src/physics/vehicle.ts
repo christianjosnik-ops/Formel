@@ -108,6 +108,8 @@ export class Vehicle {
   /** Geländegradient (Steigung in Weltrichtung), vom World-Modul gesetzt. */
   slopeX = 0;
   slopeY = 0;
+  /** Zusätzliche Bodenreibung eines havarierten Autos (Unterboden/Felgen schleifen) [m/s^2]. */
+  wreckDrag = 0;
   /** Teamleistung (Ratings wirken nur über physikalische Parameter). */
   teamPower = 1;
   teamAero = 1;
@@ -604,6 +606,15 @@ export class Vehicle {
       this.omega[i] = w1;
     }
 
+    // ---------------- Wrack: schleifender Unterboden/Felgen bremsen kräftig ----------------
+    if (this.wreckDrag > 0) {
+      const sp = Math.hypot(this.u, this.v);
+      if (sp > 0.3) {
+        const f = m * this.wreckDrag * Math.min(1, sp / 4);
+        fxBody -= (f * this.u) / sp;
+        fyBody -= (f * this.v) / sp;
+      }
+    }
     // ---------------- Hangabtrieb ----------------
     if (this.slopeX !== 0 || this.slopeY !== 0) {
       const cpS = Math.cos(this.psi);

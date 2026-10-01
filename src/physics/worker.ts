@@ -24,6 +24,7 @@ let curMap: GameMap | null = null;
 let playerInput = { ...car.input };
 const pool: Float64Array[] = [];
 let paused = false;
+let timeScale = 1;
 let acc = 0;
 let last = performance.now();
 let stepMsAvg = 0.05;
@@ -82,6 +83,7 @@ function tick(): void {
   let elapsed = (now - last) / 1000;
   last = now;
   if (elapsed > 0.25) elapsed = 0.25;
+  elapsed *= timeScale;
   if (!world) {
     acc = 0;
   } else if (!paused) {
@@ -137,6 +139,9 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'pause':
       paused = m.paused;
+      break;
+    case 'timescale':
+      timeScale = Math.max(0.05, Math.min(1, m.scale));
       break;
     case 'pit':
       director?.setPlayerPit(m.request, m.compound);

@@ -5,6 +5,7 @@ import { HULL, ZONE_PARAMS } from './crash/hull';
 import {
   BODY_CONE,
   BODY_SHARD,
+  BODY_TYRE,
   BODY_WHEEL,
   BODY_WING_F,
   BODY_WING_R,
@@ -26,6 +27,7 @@ const DEBRIS_PARAMS: Record<number, { k: number; cap: number }> = {
   [BODY_WING_F]: { k: 2.5e5, cap: 9e3 },
   [BODY_WING_R]: { k: 2.5e5, cap: 9e3 },
   [BODY_SHARD]: { k: 6e4, cap: 1200 },
+  [BODY_TYRE]: { k: 3e5, cap: 24e3 },
 };
 
 /**
@@ -144,6 +146,13 @@ export class World {
   repair(index: number): void {
     this.crash[index].reset();
     this.applyEffects(index);
+  }
+
+  private tyreBodies(): number {
+    const B = this.bodies;
+    let n = 0;
+    for (let i = B.coneCount; i < B.n; i++) if (B.active[i] && B.kind[i] === BODY_TYRE) n++;
+    return n;
   }
 
   private rand(): number {
@@ -376,6 +385,35 @@ export class World {
       this.addForce(vi, fx, fy, rx, ry, zp.height);
       this.peakContactForce += f;
       this.recordContact(v.x + rx, v.y + ry, wl.nx, wl.ny, f, 0);
+      if (wl.kind === 'tire') {
+        // Reifen aus der Barriere fliegen heraus: je aufgenommener Energie ein Reifen
+        const acc = (this.tyreAcc[vi] ?? 0) + f * Math.max(0, vnClosing) * dt;
+        let a2 = acc;
+        let spawned = 0;
+        while (a2 > 16000 && spawned < 1 && this.tyreBodies() < 36) {
+          a2 -= 16000;
+          spawned++;
+          const k = 0.35 + this.rand() * 0.5;
+          const kick = 1.5 + this.rand() * 5;
+          const side = (this.rand() - 0.5) * 6;
+          this.bodies.spawn(
+            BODY_TYRE,
+            v.x + rx + wl.nx * (d + 0.25 + this.rand() * 0.5) + tx * (this.rand() - 0.5) * 2,
+            v.y + ry + wl.ny * (d + 0.25 + this.rand() * 0.5) + ty * (this.rand() - 0.5) * 2,
+            Math.atan2(cvw, cu),
+            cu * k + wl.nx * kick + tx * side,
+            cvw * k + wl.ny * kick + ty * side,
+            (this.rand() - 0.5) * 8,
+            0.35 + this.rand() * 0.4,
+            2.5 + Math.min(6, f / 60000) + this.rand() * 3,
+            9,
+            0.33,
+            0,
+            0,
+          );
+        }
+        this.tyreAcc[vi] = a2;
+      }
       const dp = cs.plastic[i] - before;
       if (dp > 0) this.registerDeformation(vi, i, rx, ry, wl.nx, wl.ny);
     }
@@ -726,6 +764,10 @@ export class World {
     v.aeroDamageR = (1 - 0.7 * cs.wingRear) * (1 - 0.4 * cs.floor);
     v.dragDamage = 1 - 0.06 * cs.wingFront - 0.1 * cs.wingRear + 0.05 * cs.nose;
     v.retired = cs.retired;
+    // Bodenreibung des Wracks: Unterboden, fehlende Räder, platte Reifen und ausgefallene Autos
+    let wd = 3.2 * cs.floor + (cs.retired ? 1.6 : 0) + 0.4 * cs.crashLevel;
+    for (let i = 0; i < 4; i++) wd += 3.8 * cs.wheelOff[i] + 0.9 * cs.puncture[i];
+    v.wreckDrag = Math.min(14, wd);
     for (let i = 0; i < 4; i++) {
       v.wheelOff[i] = cs.wheelOff[i];
       v.punct[i] = cs.puncture[i];
@@ -796,6 +838,7 @@ export class World {
 
   private readonly tmp = new Float64Array(S.size + 4);
   private readonly slopeTmp = new Float64Array(2);
+  private readonly tyreAcc: number[] = [];
   private slopeTick = 0;
 
   /** Schreibt einen kompakten Fahrzeugblock (Skalarfelder + Dellen) an `base`. */

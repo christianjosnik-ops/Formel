@@ -291,3 +291,7 @@ body.showroom #tyrePanel, body.showroom #pitMsg { display: none; }
 .card .buy { margin-top: 8px; padding: 8px 14px; font-weight: 800; letter-spacing: 1px; border-radius: 4px 10px 4px 10px; background: #1e8f4a; color: #fff; border: 0; }
 .card .buy:disabled { background: #39424f; color: #8a94a3; }
 #resPrize { margin-top: 8px; font-size: 16px; font-weight: 800; color: #ffd12e; text-align: center; }
+
+#flash { position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0; background: radial-gradient(ellipse at center, rgba(255,255,255,.0) 20%, rgba(255,40,20,.55) 100%); }
+body.slowmo #speedfx { opacity: 0 !important; }
+body.slowmo::after { content: "AUFPRALL"; position: fixed; left: 50%; top: 14%; transform: translateX(-50%); font-weight: 900; letter-spacing: 8px; font-size: 20px; color: rgba(255,255,255,.75); pointer-events: none; z-index: 7; }

@@ -17,6 +17,7 @@
   <canvas id="view"></canvas>
 
   <div id="speedfx"></div>
+  <div id="flash"></div>
   <div id="loading"><div class="spin"></div><div>Physik startet …</div></div>
 
   <!-- HUD -->
@@ -69,6 +70,7 @@
 
   <!-- Top-Buttons -->
   <div id="topbtns">
+    <button id="btnSound" title="Ton">🔊</button>
     <button id="btnTelemetry" title="Telemetrie">📈</button>
     <button id="btnCamera" title="Kamera">🎥</button>
     <button id="btnReset" title="Zurücksetzen">↺</button>
@@ -171,6 +173,7 @@
       <h3>Anzeige</h3>
       <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="tcam">T-Cam (Airbox)</option><option value="cockpit">Cockpit</option><option value="nose">Frontflügel</option><option value="tv">TV-Regie</option><option value="side">Streckenrand tief</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
       <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
+      <div class="row"><label>Lautstärke</label><input id="rngVol" type="range" min="0" max="100" step="5" /><span id="valVol" class="muted"></span></div>
       <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
       <p class="muted" id="buildInfo"></p>
     </div>

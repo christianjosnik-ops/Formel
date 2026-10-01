@@ -25,6 +25,7 @@ export interface Settings {
   trackLimits: boolean;
   /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
   wear: number;
+  volume: number;
 }
 
 const KEY = 'formel.settings.v2';
@@ -52,6 +53,7 @@ export const DEFAULTS: Settings = {
   autoAero: true,
   trackLimits: false,
   wear: 1,
+  volume: 0.8,
 };
 
 export function loadSettings(): Settings {

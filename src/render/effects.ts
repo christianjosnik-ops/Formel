@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TEST_CAR_2026 } from '../config/car';
-import { BODY_SHARD, BODY_STRIDE, BODY_WHEEL, BODY_WING_F, BODY_WING_R, CONTACT_STRIDE, MAX_BODIES, MAX_CONTACTS, S } from '../physics/layout';
+import { BODY_SHARD, BODY_STRIDE, BODY_TYRE, BODY_WHEEL, BODY_WING_F, BODY_WING_R, CONTACT_STRIDE, MAX_BODIES, MAX_CONTACTS, S } from '../physics/layout';
 import { surfaceAt, SURFACES, type World2D } from '../world/provingGround';
 import type { CarModel } from './carModel';
 
@@ -16,6 +16,7 @@ export class DebrisRenderer {
   private readonly wingF: THREE.Group;
   private readonly wingR: THREE.Group;
   private readonly shards: THREE.InstancedMesh;
+  private readonly tyres: THREE.InstancedMesh;
   private readonly m4 = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly eul = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -50,6 +51,15 @@ export class DebrisRenderer {
       new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.5, metalness: 0.4 }),
       96,
     );
+    const tyreGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.3, 14).rotateX(Math.PI / 2);
+    this.tyres = new THREE.InstancedMesh(tyreGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), 80);
+    this.tyres.castShadow = true;
+    this.tyres.frustumCulled = false;
+    this.tyres.count = 0;
+    const tc = new THREE.Color();
+    const tcols = [0x18181a, 0x1d1d20, 0xd9d9dc, 0xc4202a, 0x18181a];
+    for (let i = 0; i < 80; i++) this.tyres.setColorAt(i, tc.setHex(tcols[i % tcols.length]));
+    scene.add(this.tyres);
     this.shards.castShadow = true;
     this.shards.frustumCulled = false;
     this.shards.count = 0;
@@ -58,6 +68,7 @@ export class DebrisRenderer {
 
   update(snap: Float64Array): void {
     let shardN = 0;
+    let tyreN = 0;
     let wheelSeen = 0;
     let wf = false;
     let wr = false;
@@ -89,6 +100,12 @@ export class DebrisRenderer {
         wr = true;
         this.wingR.position.set(x, this.groundY + hop + 0.06, -y);
         this.wingR.rotation.set(0, psi, 0);
+      } else if (kind === BODY_TYRE && tyreN < 80) {
+        this.eul.set(tilt, psi, -spin);
+        this.q.setFromEuler(this.eul);
+        this.pos.set(x, this.groundY + hop + 0.33 * Math.cos(tilt) + 0.15 * Math.sin(tilt), -y);
+        this.m4.compose(this.pos, this.q, this.one);
+        this.tyres.setMatrixAt(tyreN++, this.m4);
       } else if (kind === BODY_SHARD && shardN < 96) {
         this.eul.set(spin * 0.7, psi, spin);
         this.q.setFromEuler(this.eul);
@@ -100,13 +117,15 @@ export class DebrisRenderer {
     for (let i = 0; i < 4; i++) if (!(wheelSeen & (1 << i))) this.wheels[i].visible = false;
     this.wingF.visible = wf;
     this.wingR.visible = wr;
+    this.tyres.count = tyreN;
+    if (tyreN > 0) this.tyres.instanceMatrix.needsUpdate = true;
     this.shards.count = shardN;
     if (shardN > 0) this.shards.instanceMatrix.needsUpdate = true;
   }
 
   dispose(): void {
     for (const w of this.wheels) this.scene.remove(w);
-    this.scene.remove(this.wingF, this.wingR, this.shards);
+    this.scene.remove(this.wingF, this.wingR, this.shards, this.tyres);
   }
 }
 
@@ -288,6 +307,20 @@ export class Effects {
     const g = this.car.geometry;
     const xw = [this.lf, this.lf, -this.lr, -this.lr];
     const yw = [g.trackFront / 2, -g.trackFront / 2, g.trackRear / 2, -g.trackRear / 2];
+
+    // Rauch aus dem beschädigten Heck/Motor, bei Ausfall dunkel und dicht
+    {
+      const dmgE = snap[S.dmgEngine];
+      const dead = snap[S.retired] > 0.5;
+      if (dmgE > 0.3 || dead) {
+        const rate = (10 + dmgE * 70 + (dead ? 30 : 0)) * dt;
+        let k = Math.floor(rate) + (rnd() < rate - Math.floor(rate) ? 1 : 0);
+        const dark = dead || dmgE > 0.7 ? 0.14 : 0.55;
+        while (k-- > 0) {
+          this.smoke.emit(x - c * 0.9 + (rnd() - 0.5) * 0.3, 0.75, -(y - s * 0.9) + (rnd() - 0.5) * 0.3, vwx * 0.55 + (rnd() - 0.5) * 0.8, 1.2 + rnd() * 1.6, -vwy * 0.55 + (rnd() - 0.5) * 0.8, 1.6 + rnd() * 1.2, 0.45, 2.8, dark, dark, dark, 0.34, -0.04, 1.1);
+        }
+      }
+    }
 
     for (let i = 0; i < 4; i++) {
       const wx = x + c * xw[i] - s * yw[i];
