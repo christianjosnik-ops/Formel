@@ -295,15 +295,20 @@ export class Vehicle {
       thr = this.thrFilt;
     }
 
-    // Traktionskontrolle auf Basis des Antriebsschlupfs der Hinterräder
+    // Traktionskontrolle auf Basis des Antriebsschlupfs und der Quergleitwinkel der Hinterräder.
+    // Stufe 0 ("Aus") behält einen groben Grundschutz, damit ein 100-%-Gaspedal nicht sofort das Heck abwirft.
     {
-      const thrK = inp.tc === 1 ? 0.17 : 0.11;
+      const lvl = inp.tc;
+      const thrK = lvl === 0 ? 0.24 : lvl === 1 ? 0.11 : 0.08;
+      const gainK = lvl === 0 ? 5 : lvl === 1 ? 10 : 14;
       const slip = Math.max(this.kappa[2], this.kappa[3]);
+      // seitlicher Gleitwinkel hinten: wer quer rutscht, bekommt weniger Antriebsmoment
+      const aRear = Math.max(Math.abs(this.alpha[2]), Math.abs(this.alpha[3]));
+      const aThr = lvl === 0 ? 0.16 : lvl === 1 ? 0.1 : 0.085;
       let target = 1;
-      if (inp.tc > 0 && slip > thrK && speed > 2) {
-        target = 1 - (slip - thrK) * 9;
-        if (target < 0.05) target = 0.05;
-      }
+      if (slip > thrK && speed > 2) target = 1 - (slip - thrK) * gainK;
+      if (aRear > aThr && speed > 6) target = Math.min(target, 1 - (aRear - aThr) * (lvl === 0 ? 4 : 9));
+      if (target < 0.05) target = 0.05;
       const k = target < this.tcFactor ? 60 : 12;
       this.tcFactor += (target - this.tcFactor) * Math.min(1, dt * k);
       this.tcActive = this.tcFactor < 0.97 ? 1 : 0;
