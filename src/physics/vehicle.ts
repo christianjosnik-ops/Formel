@@ -110,6 +110,8 @@ export class Vehicle {
   slopeY = 0;
   /** Zusätzliche Bodenreibung eines havarierten Autos (Unterboden/Felgen schleifen) [m/s^2]. */
   wreckDrag = 0;
+  /** Eingriffsstärke des Schleuderschutzes 0..1 (für Gas-Rücknahme). */
+  espBeta = 0;
   /** Teamleistung (Ratings wirken nur über physikalische Parameter). */
   teamPower = 1;
   teamAero = 1;
@@ -258,7 +260,7 @@ export class Vehicle {
 
   /** Geschwindigkeitsabhängiger maximaler Radlenkwinkel [rad] (Eingabe-Skalierung). */
   maxSteerAt(speed: number, level: number): number {
-    const v0 = level === 0 ? 46 : level === 1 ? 32 : 24;
+    const v0 = level === 0 ? 46 : level === 1 ? 26 : 20;
     return this.cfg.geometry.maxSteer / (1 + (speed * speed) / (v0 * v0));
   }
 
@@ -306,6 +308,8 @@ export class Vehicle {
       this.tcFactor += (target - this.tcFactor) * Math.min(1, dt * k);
       this.tcActive = this.tcFactor < 0.97 ? 1 : 0;
       thr *= this.tcFactor;
+      // Schleuderschutz nimmt Gas zurück, solange das Heck weit ausbricht
+      if (inp.steerAssist > 0 && this.espBeta > 0) thr *= 1 - 0.8 * this.espBeta;
     }
     // ABS je Achse
     {
@@ -332,11 +336,18 @@ export class Vehicle {
       let target = cmd * this.maxSteerAt(speed, inp.steerAssist);
       if (inp.steerAssist > 0 && speed > 8) {
         const rDes = (speed * Math.tan(target)) / this.L;
-        const gain = inp.steerAssist === 1 ? 0.35 : 0.8;
+        const gain = inp.steerAssist === 1 ? 0.6 : 1.1;
         let corr = gain * (rDes - this.r) * (this.L / speed);
-        if (corr > 0.06) corr = 0.06;
-        else if (corr < -0.06) corr = -0.06;
+        // Schleuderschutz (ESP-artig): Gegenlenken in Richtung der Rutschbewegung, sobald der Schwimmwinkel wächst
+        const beta = Math.atan2(this.v, Math.max(this.u, 1));
+        const ab = Math.abs(beta);
+        const thrB = inp.steerAssist === 1 ? 0.07 : 0.045;
+        if (ab > thrB) corr += Math.sign(beta) * (ab - thrB) * (inp.steerAssist === 1 ? 1.4 : 2.2);
+        const lim = inp.steerAssist === 1 ? 0.14 : 0.2;
+        if (corr > lim) corr = lim;
+        else if (corr < -lim) corr = -lim;
         target += corr;
+        this.espBeta = ab > thrB ? Math.min(1, (ab - thrB) * 8) : 0;
       }
       const max = geo.maxSteer;
       if (target > max) target = max;

@@ -26,6 +26,8 @@ export interface Settings {
   /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
   wear: number;
   volume: number;
+  /** Version der Fahrhilfen-Voreinstellung (Migration). */
+  assistV: number;
 }
 
 const KEY = 'formel.settings.v2';
@@ -33,9 +35,9 @@ const KEY = 'formel.settings.v2';
 export const DEFAULTS: Settings = {
   map: 'monza',
   control: 'arrows',
-  tc: 1,
+  tc: 2,
   abs: 1,
-  steerAssist: 1,
+  steerAssist: 2,
   team: 'mercedes',
   compound: 'medium',
   camera: 'chase',
@@ -54,12 +56,23 @@ export const DEFAULTS: Settings = {
   trackLimits: false,
   wear: 1,
   volume: 0.8,
+  assistV: 2,
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const st = { ...DEFAULTS, ...JSON.parse(raw) } as Settings;
+      // einmalige Migration: stabilere Fahrhilfen als Voreinstellung
+      if (!JSON.parse(raw).assistV) {
+        st.tc = 2;
+        st.steerAssist = 2;
+        st.abs = 1;
+        st.assistV = 2;
+      }
+      return st;
+    }
   } catch {
     /* Speicher nicht verfügbar (privater Modus) */
   }
