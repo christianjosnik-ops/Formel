@@ -1,3 +1,4 @@
+import { buildElevation } from './elevation';
 import type { SurfaceKind, WallDef, WallKind, World2D } from './provingGround';
 
 /**
@@ -10,6 +11,61 @@ import type { SurfaceKind, WallDef, WallKind, World2D } from './provingGround';
 
 export type KindCode = 0 | 1 | 2 | 3;
 const KIND_NAMES: SurfaceKind[] = ['grass', 'asphalt', 'kerb', 'gravel'];
+
+/** Boxengasse an der Start/Ziel-Geraden (links). Maße in m, s relativ zur Startlinie (negativ = davor). */
+export const PIT = {
+  width: 15,
+  /** Beginn der Einfahrt, volle Breite ab/bis, Ende der Ausfahrt. */
+  entry0: -430,
+  full0: -330,
+  full1: 150,
+  exit1: 250,
+  /** Boxenmauer zwischen Strecke und Boxengasse. */
+  wall0: -305,
+  wall1: 120,
+  /** Mitte der schnellen Spur und der Arbeitsspur (Abstand vom Streckenrand). */
+  fastLane: 4.6,
+  workLane: 10.6,
+  /** Erste Box und Abstand; 22 Boxen. */
+  box0: -292,
+  boxStep: 11,
+  /** Geschwindigkeitsbegrenzung [m/s] (80 km/h). */
+  limit: 80 / 3.6,
+};
+
+/** Lage der Boxengasse entlang der Strecke (s relativ zur Startlinie). */
+export interface PitZone {
+  entry0: number;
+  full0: number;
+  full1: number;
+  exit1: number;
+  wall0: number;
+  wall1: number;
+  box0: number;
+}
+export const DEFAULT_PIT_ZONE: PitZone = { entry0: PIT.entry0, full0: PIT.full0, full1: PIT.full1, exit1: PIT.exit1, wall0: PIT.wall0, wall1: PIT.wall1, box0: PIT.box0 };
+/** Spa: die Busstop-Schikane liegt direkt vor der Linie, die Boxengasse beginnt daher später. */
+const PIT_ZONES: Record<string, Partial<PitZone>> = {
+  spa: { entry0: -215, full0: -125, full1: 150, exit1: 250, wall0: -105, wall1: 120, box0: -110 },
+};
+
+export interface PitBox {
+  s: number;
+  x: number;
+  y: number;
+  psi: number;
+  lat: number;
+  idx: number;
+}
+export interface PitLane {
+  /** Boxen 0..21 (Reihenfolge nach Team und Fahrer). */
+  boxes: PitBox[];
+}
+
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 
 export interface TrackStart {
   x: number;
@@ -74,6 +130,13 @@ export class Track {
   readonly barrierL: Float64Array;
   readonly barrierR: Float64Array;
   readonly walls: WallDef[] = [];
+  /** Boxengasse: zusätzliche Breite links (nur im Bereich der Boxengasse, sonst 0). */
+  readonly pitW: Float64Array;
+  /** Höhe der Streckenmitte je Stützstelle [m] und Steigung dh/ds. */
+  readonly elev: Float64Array;
+  readonly grade: Float64Array;
+  readonly pit: PitLane;
+  readonly pitZone: PitZone;
   readonly start: TrackStart;
   readonly minX: number;
   readonly maxX: number;
@@ -167,6 +230,16 @@ export class Track {
     for (let i = 0; i < n; i++) sevRaw[i] = Math.min(1, Math.max(0, (Math.abs(this.curv[i]) - 0.004) / 0.012));
     this.sev = smoothClosed(sevRaw, 5, 2);
 
+    // --- Boxengasse: zusätzliche Breite links vor/hinter der Startlinie ---
+    const pz: PitZone = { ...DEFAULT_PIT_ZONE, ...(PIT_ZONES[id] ?? {}) };
+    this.pitZone = pz;
+    const pitW = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const rs = this.s[i] > total / 2 ? this.s[i] - total : this.s[i];
+      pitW[i] = PIT.width * smoothstep(pz.entry0, pz.full0, rs) * (1 - smoothstep(pz.full1, pz.exit1, rs));
+    }
+    this.pitW = pitW;
+
     // --- Kiesbetten (Kurvenaußenseite), Kerbs, Barrierenabstände ---
     const gL = new Float64Array(n);
     const gR = new Float64Array(n);
@@ -191,6 +264,10 @@ export class Track {
         }
       }
     }
+    for (let i = 0; i < n; i++) if (pitW[i] > 0.05) {
+      gL[i] = 0;
+      kL[i] = 0;
+    }
     this.gravelL = smoothClosed(gL, 5, 2);
     this.gravelR = smoothClosed(gR, 5, 2);
     this.kerbL = smoothClosed(kL, 2, 1);
@@ -201,6 +278,8 @@ export class Track {
       const sv = this.sev[i];
       const grass = 9 + 7 * (1 - sv);
       bL[i] = this.gravelL[i] > 2 ? this.kerbL[i] + this.gravelL[i] + 4 : this.kerbL[i] + grass;
+      // Boxengasse: Mauer der Garagen dicht hinter der Boxengasse
+      if (pitW[i] > 0.05) bL[i] = pitW[i] + 2.2 + (1 - pitW[i] / PIT.width) * (bL[i] - 2.2);
       bR[i] = this.gravelR[i] > 2 ? this.kerbR[i] + this.gravelR[i] + 4 : this.kerbR[i] + grass;
       // Innenseite enger Kurven: Versatz nicht größer als der halbe Kurvenradius (keine Schleifen)
       const radius = 1 / Math.max(Math.abs(this.curv[i]), 1e-4);
@@ -208,6 +287,12 @@ export class Track {
       else bR[i] = Math.min(bR[i], Math.max(4, (radius - this.wr[i]) * 0.6));
     }
     this.barrierL = smoothClosed(bL, 6, 2);
+    // nach dem Glätten: die Garagenmauer liegt nie innerhalb der Boxengasse
+    for (let i = 0; i < n; i++) {
+      let m = 0;
+      for (let k = -6; k <= 6; k++) m = Math.max(m, pitW[(i + k + n) % n]);
+      if (m > 0.02) this.barrierL[i] = Math.max(this.barrierL[i], m + 2.6);
+    }
     this.barrierR = smoothClosed(bR, 6, 2);
 
     // --- Bounding-Box und räumlicher Index ---
@@ -229,6 +314,21 @@ export class Track {
     this.maxX = mxx;
     this.minY = mny;
     this.maxY = mxy;
+
+    // --- Höhenprofil ---
+    this.elev = buildElevation(id, n, total);
+    this.grade = new Float64Array(n);
+    for (let i = 0; i < n; i++) this.grade[i] = (this.elev[(i + 1) % n] - this.elev[(i - 1 + n) % n]) / (2 * ds);
+
+    // --- Boxen ---
+    const boxes: PitBox[] = [];
+    for (let k = 0; k < 22; k++) {
+      const sb = pz.box0 + k * PIT.boxStep;
+      const idx = (Math.round(((sb + total) % total) / ds) + n) % n;
+      const lat = this.wl[idx] + PIT.workLane;
+      boxes.push({ s: sb, idx, lat, psi: hdg[idx], x: x[idx] + this.nx(idx) * lat, y: y[idx] + this.ny(idx) * lat });
+    }
+    this.pit = { boxes };
 
     // --- Wände ---
     this.buildWalls();
@@ -288,6 +388,29 @@ export class Track {
     return best;
   }
 
+  /** Streckenhöhe an (px, py) [m], entlang der Strecke linear interpoliert (Querprofil eben). */
+  heightAt(px: number, py: number): number {
+    const i = this.nearest(px, py);
+    if (i < 0) return 0;
+    const n = this.n;
+    const along = ((px - this.x[i]) * Math.cos(this.hdg[i]) + (py - this.y[i]) * Math.sin(this.hdg[i])) / this.ds;
+    const j = along >= 0 ? (i + 1) % n : (i - 1 + n) % n;
+    const f = Math.min(1, Math.abs(along));
+    return this.elev[i] + (this.elev[j] - this.elev[i]) * f;
+  }
+
+  /** Steigung (dh/ds) und Richtung der Strecke an (px, py): [gx, gy] = Gradient der Höhe in Weltkoordinaten. */
+  slopeAt(px: number, py: number, out: Float64Array): void {
+    const i = this.nearest(px, py);
+    if (i < 0) {
+      out[0] = 0;
+      out[1] = 0;
+      return;
+    }
+    out[0] = this.grade[i] * Math.cos(this.hdg[i]);
+    out[1] = this.grade[i] * Math.sin(this.hdg[i]);
+  }
+
   /** Querabstand zur Mittellinie (links positiv) an Stützstelle i. */
   lateral(i: number, px: number, py: number): number {
     return (px - this.x[i]) * this.nx(i) + (py - this.y[i]) * this.ny(i);
@@ -319,8 +442,28 @@ export class Track {
         }
         const gravel = side === 1 ? this.gravelL[mi] : this.gravelR[mi];
         const kind: WallKind = startZone(mi) ? 'concrete' : gravel > 2 ? 'tire' : 'armco';
+        // in der Boxengasse-Zone nur die äußere Mauer (Garagen), die Strecke bleibt offen
         this.walls.push({ ax, ay, bx, by, nx: wnx, ny: wny, kind });
       }
+    }
+    // Boxenmauer zwischen Strecke und Boxengasse (beidseitig wirksam)
+    const rel = (idx: number) => (this.s[idx] > this.length / 2 ? this.s[idx] - this.length : this.s[idx]);
+    for (let i = 0; i < n; i += step) {
+      const j = (i + step) % n;
+      const r0 = rel(i);
+      if (r0 < this.pitZone.wall0 || r0 > this.pitZone.wall1) continue;
+      const o0 = this.wl[i] + 0.9;
+      const o1 = this.wl[j] + 0.9;
+      const ax = this.x[i] + this.nx(i) * o0;
+      const ay = this.y[i] + this.ny(i) * o0;
+      const bx = this.x[j] + this.nx(j) * o1;
+      const by = this.y[j] + this.ny(j) * o1;
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 0.5) continue;
+      const nx0 = -(by - ay) / len;
+      const ny0 = (bx - ax) / len;
+      this.walls.push({ ax, ay, bx, by, nx: nx0, ny: ny0, kind: 'pitwall' });
+      this.walls.push({ ax: bx, ay: by, bx: ax, by: ay, nx: -nx0, ny: -ny0, kind: 'pitwall' });
     }
   }
 
@@ -356,7 +499,7 @@ export class Track {
     const lat = this.lateral(bi, px, py);
     const side = lat >= 0 ? 1 : -1;
     const al = Math.abs(lat);
-    const w = side === 1 ? this.wl[bi] : this.wr[bi];
+    const w = side === 1 ? this.wl[bi] + this.pitW[bi] : this.wr[bi];
     if (al <= w) return 1;
     const kerb = side === 1 ? this.kerbL[bi] : this.kerbR[bi];
     const off = al - w;
@@ -383,6 +526,6 @@ export class Track {
   }
 
   toWorld2D(): World2D {
-    return { surfaces: [], surfaceFn: (x, y) => this.surfaceAt(x, y), walls: this.walls, cones: [] };
+    return { surfaces: [], surfaceFn: (x, y) => this.surfaceAt(x, y), slopeFn: (x, y, out) => this.slopeAt(x, y, out), walls: this.walls, cones: [] };
   }
 }

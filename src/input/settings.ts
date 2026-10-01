@@ -6,14 +6,14 @@ export interface Settings {
   steerAssist: number;
   team: string;
   compound: 'soft' | 'medium' | 'hard' | 'inter' | 'wet';
-  camera: 'chase' | 'cockpit' | 'tv' | 'heli' | 'showroom';
+  camera: 'chase' | 'tcam' | 'cockpit' | 'nose' | 'tv' | 'side' | 'heli' | 'showroom';
   telemetry: boolean;
   brakeBias: number;
   /** Neigung: voller Lenkeinschlag bei diesem Winkel [Grad]. */
   tiltRange: number;
   tiltInvert: boolean;
   quality: 'auto' | 'high' | 'low';
-  mode: 'race' | 'free';
+  mode: 'race' | 'weekend' | 'free';
   laps: number;
   /** -1 = keine KI, sonst Index in AI_LEVELS. */
   aiLevel: number;
@@ -21,6 +21,10 @@ export interface Settings {
   /** Index in der Fahrerliste (race/field DRIVERS). */
   driver: number;
   field: number;
+  autoAero: boolean;
+  trackLimits: boolean;
+  /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
+  wear: number;
 }
 
 const KEY = 'formel.settings.v2';
@@ -45,6 +49,9 @@ export const DEFAULTS: Settings = {
   grid: 'mid',
   driver: 0,
   field: 22,
+  autoAero: true,
+  trackLimits: false,
+  wear: 1,
 };
 
 export function loadSettings(): Settings {

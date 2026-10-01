@@ -115,6 +115,9 @@ export class AIDriver {
     }
     const speed = Math.hypot(v.u, v.v);
     const idx = this.locate(v.x, v.y);
+    // Reifengrip (Temperatur, Verschleiß) bestimmt das fahrbare Tempo: schlechtere Reifen, vorsichtigere Fahrweise
+    const gAvg = 0.25 * (v.tyreGrip[0] + v.tyreGrip[1] + v.tyreGrip[2] + v.tyreGrip[3]);
+    level *= Math.pow(Math.min(1.03, gAvg / 0.985), 0.75);
 
     // ---- Fehler-Modell: langsames Rauschen des Tempos, seltene Fehlversuche ----
     const sigma = (1 - this.params.consistency) * 0.03;
@@ -125,10 +128,10 @@ export class AIDriver {
     // ---- Überholen / Folgen ----
     const myLat = t.lateral(idx, v.x, v.y);
     let vCap = 1e9;
-    if (ahead && ahead.gap < 45 + speed * 1.2) {
-      const sameLane = Math.abs(ahead.lat - myLat) < 2.9;
+    if (ahead && ahead.gap < 55 + speed * 1.6) {
+      const sameLane = Math.abs(ahead.lat - myLat) < 3.3;
       const prof = line.speed[(idx + Math.round(speed * 0.3 / t.ds)) % n] * this.params.pace * level;
-      if (this.side === 0 && ahead.gap < 26 && sameLane && (prof > ahead.speed + 0.3 || ahead.speed < 12) && this.rnd() < 0.05 + 0.6 * this.params.racecraft) {
+      if (this.side === 0 && level > 0.9 && ahead.gap < 26 && sameLane && (prof > ahead.speed + 0.3 || ahead.speed < 12) && this.rnd() < 0.05 + 0.6 * this.params.racecraft) {
         const mid = 0.5 * (line.lo[idx] + line.hi[idx]);
         this.side = ahead.lat < mid ? 1 : -1;
       }
@@ -144,10 +147,12 @@ export class AIDriver {
       // Abstandsregelung: im gleichen Streifen nicht auffahren
       if (sameLane || Math.abs(this.latTarget + line.offset[idx] - ahead.lat) < 2.4) {
         // sicherer Abstand: aus dem Tempo des Vordermanns mit moderater Verzögerung noch anhaltbar
-        const room = Math.max(0, ahead.gap - 7.2);
-        const a = 0.55 * brakeLimit(speed);
-        vCap = Math.sqrt(ahead.speed * ahead.speed + 2 * a * room);
-        if (room < 1.5) vCap = Math.min(vCap, ahead.speed * 0.95);
+        // Sicherer Abstand: der Vordermann kann hart bremsen (0.8 der Bremsgrenze), ich bremse mit 0.5
+        const room = Math.max(0, ahead.gap - 9.5 - 0.1 * speed);
+        const aF = 0.5 * brakeLimit(speed);
+        const aL = 0.8 * brakeLimit(ahead.speed);
+        vCap = Math.sqrt(2 * aF * room + (aF / aL) * ahead.speed * ahead.speed);
+        if (room < 3) vCap = Math.min(vCap, ahead.speed * 0.92);
       }
     } else {
       this.side = 0;
@@ -225,13 +230,56 @@ export class AIDriver {
       inp.brake = 0;
     }
     // Aktive Aero: X-Modus, wenn auf den nächsten 250 m nichts Enges kommt
-    let straight = speed > 45;
-    for (let k = 1; k <= 60 && straight; k += 6) if (line.speed[(idx + k) % n] < 78) straight = false;
+    let straight = speed > 40;
+    for (let k = 1; k <= 45 && straight; k += 5) if (line.speed[(idx + k) % n] < 66) straight = false;
     inp.aeroX = straight && inp.brake === 0 ? 1 : 0;
 
     // ---- Steckenbleiben erkennen ----
     if (speed < 1.5 && mode === 'race') this.stuck += dt;
     else this.stuck = 0;
+  }
+
+  /**
+   * Fahren nach festem Querversatz und Zieltempo (Boxengasse). lat = Querabstand zur Mittellinie (links +).
+   * Die Steuerung ist dieselbe Pure-Pursuit-Regelung wie auf der Rennlinie.
+   */
+  driveTo(dt: number, v: Vehicle, tgtLat: number, tgtSpeed: number): void {
+    const t = this.line.track;
+    const n = t.n;
+    const inp = v.input;
+    inp.tc = 2;
+    inp.abs = 1;
+    inp.steerAssist = 0;
+    inp.aeroX = 0;
+    const speed = Math.hypot(v.u, v.v);
+    const idx = this.locate(v.x, v.y);
+    const Ld = Math.max(5, 3 + 0.3 * speed);
+    const j = (idx + Math.max(1, Math.round(Ld / t.ds))) % n;
+    const px = t.x[j] + t.nx(j) * tgtLat;
+    const py = t.y[j] + t.ny(j) * tgtLat;
+    const dx = px - v.x;
+    const dy = py - v.y;
+    const c = Math.cos(v.psi);
+    const s = Math.sin(v.psi);
+    const bx = c * dx + s * dy;
+    const by = -s * dx + c * dy;
+    const alpha = Math.atan2(by, Math.max(bx, 0.5));
+    let delta = Math.atan2(2 * WHEELBASE * Math.sin(alpha), Ld);
+    const yawDes = (speed * Math.sin(alpha) * 2) / Ld;
+    delta += 0.18 * (yawDes - v.r) * (WHEELBASE / Math.max(speed, 6));
+    inp.steer = Math.max(-1, Math.min(1, delta / v.maxSteerAt(speed, 0)));
+    const e = tgtSpeed - speed;
+    if (tgtSpeed < 0.25 && speed < 1.2) {
+      inp.throttle = 0;
+      inp.brake = 1;
+    } else if (e < -0.6) {
+      inp.throttle = 0;
+      inp.brake = Math.min(1, 0.08 + -e * 0.14);
+    } else {
+      inp.throttle = Math.max(0, Math.min(1, 0.12 + e * 0.35));
+      inp.brake = 0;
+    }
+    this.stuck = 0;
   }
 
   /** Sekunden, die das Auto im Rennen stillsteht (für Bergung/Zurücksetzen). */

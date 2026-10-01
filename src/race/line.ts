@@ -14,7 +14,7 @@ const G = 9.80665;
 /** Maximale Querbeschleunigung [m/s^2] in Abhängigkeit der Geschwindigkeit (Abtrieb). */
 export function lateralLimit(v: number): number {
   const a = 1.85 + 2.0 * (1 - Math.exp(-((v / 48) ** 2)));
-  return a * G * 0.96;
+  return a * G * 0.93;
 }
 
 /** Maximale Bremsverzögerung [m/s^2]. */
@@ -24,9 +24,9 @@ export function brakeLimit(v: number): number {
 
 /** Maximale Beschleunigung [m/s^2] (Traktion/Leistung/Luftwiderstand). */
 export function accelLimit(v: number): number {
-  const power = 430e3 / (868 * Math.max(v, 4));
+  const power = 600e3 / (868 * Math.max(v, 4));
   const traction = 13.5;
-  return Math.min(traction, power) - 0.00066 * v * v;
+  return Math.min(traction, power) - 0.00048 * v * v;
 }
 
 export class RacingLine {
@@ -154,6 +154,13 @@ export class RacingLine {
         if (va < v[j]) v[j] = va;
       }
     }
+  }
+
+  /** Rundenzeit des Geschwindigkeitsprofils bei Tempofaktor `pace` [s] (ohne Fahrfehler, ohne Verkehr). */
+  lapTime(pace = 1): number {
+    let t = 0;
+    for (let i = 0; i < this.n; i++) t += this.seg[i] / Math.max(1, this.speed[i] * pace);
+    return t;
   }
 
   /** Lenkwinkel-Vorsteuerung und Sollpunkt: Punkt der Ideallinie mit Versatz `lat` bei Index i. */

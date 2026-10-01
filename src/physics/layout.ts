@@ -54,6 +54,10 @@ export const S = {
   alpha: four(),
   susp: four(), // Einfederung je Rad [m]
   brakeTemp: four(),
+  tyreTemp: four(), // Reifenkerntemperatur [°C]
+  tyreWear: four(), // Verschleiß 0..1
+  compound: one(), // Index in COMPOUND_ORDER
+  tyreGrip: four(), // aktueller Gripfaktor je Rad
   // ---- Schäden (0 = heil, 1 = zerstört) ----
   dmgNose: one(),
   dmgWingF: one(),
@@ -89,6 +93,12 @@ export const S = {
   raceTime: one(), // Rennzeit seit Start [s]
   raceLaps: one(), // Rundenzahl des Rennens
   raceFinishTime: one(),
+  pitState: one(), // 0 keiner, 1 angefordert, 2 Boxengasse, 3 Reifenwechsel, 4 Ausfahrt
+  pitTimer: one(), // verbleibende Standzeit [s]
+  pitStops: one(),
+  pitBoxS: one(), // Position der eigenen Box [m relativ zur Startlinie]
+  pitLimiter: one(), // 1 = Geschwindigkeitsbegrenzer aktiv
+  pitNext: one(), // gewählte Mischung (Index)
   wallContact: one(), // Anzahl Kontaktpunkte mit Wand/Fremdkörpern
   contacts: 0, // Anfang des Kontaktfeldes (MAX_CONTACTS * CONTACT_STRIDE)
   dents: 0, // Anfang des Dellenfeldes (MAX_DENTS * DENT_STRIDE)

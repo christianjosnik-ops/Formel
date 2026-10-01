@@ -36,9 +36,57 @@ function noiseTexture(base: [number, number, number], amp: number, speck: Array<
   return t;
 }
 
+/** Asphalt mit Zuschlagkörnern, Teernähten, Rissen und Flecken (kachelbar, 8 m pro Kachel). */
+function asphaltTexture(): THREE.CanvasTexture {
+  const t = noiseTexture([62, 64, 68], 40, [[170, 170, 172], [18, 18, 20], [205, 205, 205], [95, 92, 88]], 1234, 1024);
+  const c = t.image as HTMLCanvasElement;
+  const g = c.getContext('2d')!;
+  const r = rng(4242);
+  // großflächige helle und dunkle Flecken (Reparaturen, Ölspuren)
+  for (let i = 0; i < 26; i++) {
+    const x = r() * 1024;
+    const y = r() * 1024;
+    const rad = 40 + r() * 130;
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+    const dark = r() < 0.6;
+    grd.addColorStop(0, dark ? 'rgba(10,10,12,0.22)' : 'rgba(150,150,155,0.12)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  // Teernähte (Fahrbahnfugen)
+  g.strokeStyle = 'rgba(8,8,10,0.55)';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(0, 512);
+  for (let x = 0; x <= 1024; x += 64) g.lineTo(x, 512 + (r() - 0.5) * 6);
+  g.stroke();
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(340, 0);
+  for (let y = 0; y <= 1024; y += 64) g.lineTo(340 + (r() - 0.5) * 8, y);
+  g.stroke();
+  // feine Risse
+  g.strokeStyle = 'rgba(12,12,14,0.5)';
+  g.lineWidth = 1.2;
+  for (let i = 0; i < 18; i++) {
+    let x = r() * 1024;
+    let y = r() * 1024;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let k = 0; k < 7; k++) {
+      x += (r() - 0.5) * 60;
+      y += (r() - 0.3) * 40;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  t.needsUpdate = true;
+  return t;
+}
+
 const TEX: Record<SurfaceKind, () => THREE.CanvasTexture> = {
-  asphalt: () =>
-    noiseTexture([58, 60, 63], 34, [[150, 150, 150], [20, 20, 22], [190, 190, 190]], 1234, 1024),
+  asphalt: () => asphaltTexture(),
   gravel: () => noiseTexture([150, 140, 122], 70, [[220, 210, 190], [90, 84, 72], [180, 170, 150]], 77),
   grass: () => noiseTexture([72, 104, 52], 36, [[40, 80, 30], [120, 150, 70], [90, 120, 50]], 91),
   sand: () => noiseTexture([206, 184, 140], 26, [[230, 210, 170], [170, 150, 110]], 5),
@@ -116,8 +164,8 @@ function tireWallTexture(): THREE.CanvasTexture {
 }
 
 /** Baut Betonwände, Reifenbarrieren und Leitplanken. Bei tireBox werden Reifenwände als texturierte Box gezeichnet (günstig für lange Strecken). */
-export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false): void {
-  const concrete = walls.filter((w) => w.kind === 'concrete');
+export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false, heightAt: (x: number, y: number) => number = () => 0): void {
+  const concrete = walls.filter((w) => w.kind === 'concrete' || w.kind === 'pitwall');
   const tires = walls.filter((w) => w.kind === 'tire');
   const armco = walls.filter((w) => w.kind === 'armco');
   const m4 = new THREE.Matrix4();
@@ -135,7 +183,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     concrete.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.3, 0.525, -((w.ay + w.by) / 2 - w.ny * 0.3));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.3, 0.525 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.3));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -150,7 +198,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     tires.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525, -((w.ay + w.by) / 2 - w.ny * 0.75));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.75));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -181,7 +229,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
           for (let l = 0; l < layers; l++) {
             const px = w.ax + dx * t - w.nx * off;
             const py = w.ay + dy * t - w.ny * off;
-            pos.set(px, 0.15 + l * 0.3, -py);
+            pos.set(px, 0.15 + l * 0.3 + heightAt(px, py), -py);
             q.identity();
             scl.set(1, 1, 1);
             m4.compose(pos, q, scl);
@@ -206,7 +254,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     armco.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.08, 0.6, -((w.ay + w.by) / 2 - w.ny * 0.08));
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.08, 0.6 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.08));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
@@ -214,7 +262,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
       const n = Math.max(1, Math.round(len / 2));
       for (let j = 0; j <= n; j++) {
         const t = (j / n) * len;
-        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.16, 0.4, -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.16));
+        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.16, 0.4 + heightAt(w.ax, w.ay), -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.16));
         q.identity();
         scl.set(1, 1, 1);
         m4.compose(pos, q, scl);
