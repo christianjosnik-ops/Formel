@@ -405,7 +405,7 @@ export class RaceDirector {
 
     // KI-Steuerung: in der Startphase vorsichtiger (Pulk, enge erste Kurve)
     const player = ents.find((x) => x.isPlayer && !cfgAuto);
-    const startEase = Math.min(1, 0.78 + 0.22 * (now / 60));
+    const startEase = Math.min(1, 0.72 + 0.28 * (now / 75));
     for (const e of ents) {
       if (e.out || !e.ai) continue;
       const v = this.world.vehicles[e.vi];
@@ -426,7 +426,7 @@ export class RaceDirector {
         const L2 = t.length;
         let d = e.dist - player.dist;
         d = ((((d + L2 / 2) % L2) + L2) % L2) - L2 / 2;
-        if (d < -40) rubber = 1 + Math.min(0.07, ((-d - 40) / 500) * 0.07);
+        if (d < -40) rubber = 1 + Math.min(0.08, ((-d - 40) / 400) * 0.08);
         else if (d > 60) rubber = 1 - Math.min(0.1, ((d - 60) / 400) * 0.1);
       }
       e.ai.update(dt, v, mode, ahead, beside, startEase * rubber);
