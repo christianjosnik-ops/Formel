@@ -8,6 +8,7 @@ import { RacingLine } from './race/line';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
+import { GameAudio } from './audio/audio';
 import { loadCareer, prize, saveCareer } from './career';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
@@ -53,6 +54,10 @@ const career = loadCareer();
 const physics = new PhysicsClient(settings.map, undefined, career.up);
 const controls = new Controls(settings);
 setupTouchPads(controls);
+const audio = new GameAudio();
+const unlockAudio = () => audio.unlock();
+for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, unlockAudio, { passive: true });
+audio.setVolume(settings.volume);
 const hud = new Hud();
 hud.setTelemetryVisible(settings.telemetry);
 
@@ -197,6 +202,12 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   }
   lapTimer.enforceLimits = settings.trackLimits;
   lapTimer.reset(0);
+  slowT = 0;
+  slowScale = 1;
+  prevLevel = 0;
+  lastScale = 1;
+  physics.setTimeScale(1);
+  document.body.classList.remove('slowmo');
   const cam = settings.camera === 'showroom' ? 'chase' : settings.camera;
   rig.setMode(cam, car);
   document.body.classList.remove('showroom');
@@ -261,6 +272,25 @@ const menu = setupMenu(settings, controls, {
     applyQuality();
   },
 });
+const btnSound = document.getElementById('btnSound')!;
+const syncSound = () => (btnSound.textContent = audio.isMuted || settings.volume === 0 ? '🔇' : '🔊');
+btnSound.addEventListener('click', () => {
+  audio.unlock();
+  audio.setMuted(!audio.isMuted);
+  syncSound();
+});
+const rngVol = document.getElementById('rngVol') as HTMLInputElement;
+const valVol = document.getElementById('valVol')!;
+rngVol.value = String(Math.round(settings.volume * 100));
+valVol.textContent = `${rngVol.value} %`;
+rngVol.addEventListener('input', () => {
+  settings.volume = Number(rngVol.value) / 100;
+  valVol.textContent = `${rngVol.value} %`;
+  audio.unlock();
+  audio.setVolume(settings.volume);
+  saveSettings(settings);
+  syncSound();
+});
 document.getElementById('buildInfo')!.textContent = `Build ${__BUILD__}`;
 
 const resetCar = () => {
@@ -315,6 +345,52 @@ function applyQuality(): void {
 applyQuality();
 
 // ---------------------------------------------------------------- Hauptschleife
+// ---------------------------------------------------------------- Crash-Wirkung: Zeitlupe, Blitz, Vibration
+let slowT = 0;
+let prevLevel = 0;
+let slowScale = 1;
+const flashEl = document.getElementById('flash')!;
+let flash = 0;
+function crashFx(s: Float64Array, dt: number): void {
+  const lvl = s[S.crashLevel];
+  const speedKmh = s[S.speedKmh];
+  if (lvl >= 3 && prevLevel < 3 && !document.body.classList.contains('showroom')) {
+    slowT = 1.5;
+    flash = 1;
+    try {
+      navigator.vibrate?.([60, 40, 120]);
+    } catch {
+      /* ignorieren */
+    }
+  } else if (lvl >= 2 && prevLevel < 2) {
+    flash = Math.max(flash, 0.45);
+    try {
+      navigator.vibrate?.(40);
+    } catch {
+      /* ignorieren */
+    }
+  }
+  prevLevel = lvl;
+  void speedKmh;
+  // Zeitlupe: schnell hinein, weich wieder heraus
+  let target = 1;
+  if (slowT > 0) {
+    slowT -= dt;
+    const k = Math.max(0, slowT) / 1.5;
+    target = k > 0.35 ? 0.22 : 0.22 + (0.35 - k) / 0.35 * 0.78;
+  }
+  slowScale += (target - slowScale) * Math.min(1, dt * 10);
+  const sc = slowScale > 0.97 ? 1 : slowScale;
+  if (Math.abs(sc - lastScale) > 0.02) {
+    lastScale = sc;
+    physics.setTimeScale(sc);
+    document.body.classList.toggle('slowmo', sc < 0.6);
+  }
+  flash = Math.max(0, flash - dt * 1.6);
+  flashEl.style.opacity = String(flash);
+}
+let lastScale = 1;
+
 const input = newInput();
 const slopeTmp = new Float64Array(2);
 const speedFx = document.getElementById('speedfx')!;
@@ -384,6 +460,9 @@ function frame(now: number): void {
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
     hud.update(s, dt, settings.tc, settings.abs);
+    if (document.body.classList.contains('inmenu')) audio.silence();
+    else audio.update(s, dt, physics);
+    crashFx(s, dt);
     speedFx.style.opacity = String(Math.min(0.85, Math.max(0, (s[S.speedKmh] - 120) / 260)));
     lapTimer.update(s);
     if (!loaded) {

@@ -128,7 +128,7 @@ function concreteTexture(): THREE.CanvasTexture {
   return t;
 }
 
-function tireWallTexture(): THREE.CanvasTexture {
+export function tireWallTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 128;
@@ -192,19 +192,48 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     scene.add(mesh);
   }
   if (tires.length && tireBox) {
-    const tt = tireWallTexture();
-    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1.05, 1.5), new THREE.MeshStandardMaterial({ map: tt, roughness: 0.95 }), tires.length);
-    mesh.receiveShadow = true;
-    tires.forEach((w, i) => {
+    // Strecke: dunkler Kern + vordere Reihe aus gestapelten Reifen (2 Lagen, Farbbänder), weit weniger Instanzen als die Vollversion
+    const core = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.62, 1.0), new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 1 }), tires.length);
+    const geo = new THREE.CylinderGeometry(0.36, 0.36, 0.3, 9);
+    const layers = 2;
+    let count = 0;
+    for (const w of tires) count += Math.max(1, Math.round(Math.hypot(w.bx - w.ax, w.by - w.ay) / 0.74)) * layers;
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), count);
+    mesh.castShadow = true;
+    const colors = [0x16161a, 0xe8e8ea, 0x16161a, 0xc4202a, 0x16161a, 0x1a4fb5];
+    const col = new THREE.Color();
+    let k = 0;
+    tires.forEach((w, wi) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.75, 0.525 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.75));
+      const hh = heightAt(w.ax, w.ay);
+      pos.set((w.ax + w.bx) / 2 - w.nx * 0.55, 0.31 + hh, -((w.ay + w.by) / 2 - w.ny * 0.55));
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
       m4.compose(pos, q, scl);
-      mesh.setMatrixAt(i, m4);
+      core.setMatrixAt(wi, m4);
+      const dx = (w.bx - w.ax) / len;
+      const dy = (w.by - w.ay) / len;
+      const n = Math.max(1, Math.round(len / 0.74));
+      q.identity();
+      scl.set(1, 1, 1);
+      for (let i = 0; i < n; i++) {
+        const t = ((i + 0.5) / n) * len;
+        const px = w.ax + dx * t - w.nx * 0.42;
+        const py = w.ay + dy * t - w.ny * 0.42;
+        for (let l = 0; l < layers; l++) {
+          pos.set(px, 0.15 + l * 0.3 + heightAt(w.ax, w.ay), -py);
+          m4.compose(pos, q, scl);
+          mesh.setMatrixAt(k, m4);
+          col.setHex(colors[(i + l * 2 + wi) % colors.length]);
+          mesh.setColorAt(k, col);
+          k++;
+        }
+      }
     });
-    scene.add(mesh);
+    mesh.count = k;
+    core.receiveShadow = true;
+    scene.add(core, mesh);
   } else if (tires.length) {
     // gestapelte Reifen: 3 Reihen tief, 3 Lagen hoch
     const geo = new THREE.CylinderGeometry(0.34, 0.34, 0.3, 10);

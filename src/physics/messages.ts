@@ -12,6 +12,7 @@ export type ToWorker =
   | { type: 'recycle'; buf: Float64Array }
   | { type: 'pause'; paused: boolean }
   | { type: 'brakeBias'; bias: number }
+  | { type: 'timescale'; scale: number }
   | { type: 'pit'; request: boolean; compound: CompoundId }
   | { type: 'repair' };
 

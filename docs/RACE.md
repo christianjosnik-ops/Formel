@@ -15,3 +15,10 @@
 - **Spieler**: Knopf „BOX“ (Taste P) fordert den Stopp an, Mischung wählbar; in der Boxengasse begrenzt das Auto selbst auf 80 km/h, an der eigenen Box anhalten → Reifenwechsel.
 - **Werkstatt** (`src/career.ts`): Preisgeld nach Platzierung, Upgrades (Antrieb, Aerodynamik, Bremsen, Reifenpflege, Leichtbau; je 5 Stufen) wirken nur über physikalische Größen. Stand im Browser gespeichert.
 - **Höhenprofile** (`src/world/elevation.ts`): Näherungen für Monza, Spa und Silverstone; Hangabtriebskraft in der Physik, Gelände/Strecke/Bauwerke folgen der Höhe.
+
+## Klang und Crash-Wirkung
+
+- `src/audio/audio.ts`: prozeduraler Ton (Web Audio): V6-Turbo-Hybrid mit Drehzahl/Last/Hybrid-Heulen, Reifenquietschen, Wind, Aufprall- und Schleifgeräusche, Gegner-Motoren mit Abstand, Stereo und Doppler, Startampel-Pieptöne, Boxen-Schlagschrauber. Lautstärke im Menü, Stumm-Knopf oben.
+- Schwere Crashs (Stufe ≥ 3): Zeitlupe (Worker-Zeitskala), roter Blitz, Vibration, Rauch aus dem Heck bei Motorschaden.
+- Wrack-Verhalten: schleifender Unterboden, fehlende Räder und platte Reifen bremsen stark (`wreckDrag`), das Auto „driftet“ nicht mehr einfach davon.
+- Reifenbarrieren: Reifen werden bei Aufprall herausgeschleudert (`BODY_TYRE`), Strecken-Barrieren zeigen gestapelte Reifen.
