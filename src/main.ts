@@ -3,7 +3,12 @@ import * as THREE from 'three';
 import { TEST_CAR_2026 } from './config/car';
 import teams from './data/teams.json';
 import { DRIVERS, teamOf } from './race/field';
-import type { RaceConfig } from './race/race';
+import { AI_LEVELS, driverPace } from './race/field';
+import { RacingLine } from './race/line';
+import { selectField, type RaceConfig } from './race/race';
+import { fmtTime } from './ui/race';
+import { COMPOUND_ORDER } from './config/tyres';
+import { loadCareer, prize, saveCareer } from './career';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -44,7 +49,8 @@ const effects = new Effects(scene, worldMap);
 let debris: DebrisRenderer | null = null;
 const lapTimer = new LapTimer(gameMap.track);
 
-const physics = new PhysicsClient(settings.map);
+const career = loadCareer();
+const physics = new PhysicsClient(settings.map, undefined, career.up);
 const controls = new Controls(settings);
 setupTouchPads(controls);
 const hud = new Hud();
@@ -115,15 +121,28 @@ function updateAi(dt: number, s: Float64Array): void {
     const v = physics.carView(k);
     if (!v) continue;
     const m = (aiModels[k] ??= makeAi(v));
+    if (m.lastCompound !== (v[S.compound] | 0)) {
+      m.lastCompound = v[S.compound] | 0;
+      m.setCompound(COMPOUND_ORDER[m.lastCompound] ?? 'medium');
+    }
     const dx = v[S.x] - s[S.x];
     const dy = v[S.y] - s[S.y];
     const near = dx * dx + dy * dy < 450 * 450;
     m.root.visible = near;
-    if (near) m.update(v, dt);
+    if (near) {
+      let g = 0;
+      let tl = 0;
+      if (gameMap.track) {
+        g = gameMap.track.heightAt(v[S.x], v[S.y]);
+        gameMap.track.slopeAt(v[S.x], v[S.y], slopeTmp);
+        tl = Math.atan(slopeTmp[0] * Math.cos(v[S.psi]) + slopeTmp[1] * Math.sin(v[S.psi]));
+      }
+      m.update(v, dt, g, tl);
+    }
   }
 }
 
-function raceConfig(): RaceConfig {
+function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
   return {
     laps: settings.laps,
     aiLevel: Math.max(0, settings.aiLevel),
@@ -131,33 +150,74 @@ function raceConfig(): RaceConfig {
     field: settings.aiLevel < 0 ? 1 : settings.field,
     grid: settings.grid,
     seed: (Date.now() & 0xffff) + 1,
+    wearScale: settings.wear,
+    startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
+    ...over,
   };
 }
 function applyControlClass(): void {
   document.body.classList.toggle('arrows', settings.control === 'arrows');
   document.body.classList.toggle('tilt', settings.control === 'tilt');
 }
-function startGame(): void {
-  const race = settings.mode === 'race';
+let lineCache: RacingLine | null = null;
+/** Qualifying-Zeiten der KI: Profilzeit der Ideallinie, reale Fahrzeit (Faktor), Team-/Fahrerabstand, Rauschen. */
+function qualiGrid(cfg: RaceConfig, playerBest: number): { order: number[]; rows: Array<{ pos: number; name: string; color: string; time: string; gap: string; me: boolean }> } {
+  lineCache ??= new RacingLine(gameMap.track!);
+  const level = AI_LEVELS[Math.min(AI_LEVELS.length - 1, cfg.aiLevel)];
+  const ids = selectField({ ...cfg, field: settings.aiLevel < 0 ? 1 : settings.field });
+  let seed = cfg.seed;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const list = ids.map((id, k) => {
+    const d = DRIVERS[id];
+    const t = teamOf(d);
+    const time = k === 0 ? (playerBest > 0 ? playerBest : 999) : (lineCache!.lapTime(1) * 1.165) / (level.pace * driverPace(d)) + t.gap * 0.9 + (98 - d.pace) * 0.04 + (rnd() - 0.5) * 0.5;
+    return { id, d, t, time, me: k === 0 };
+  });
+  list.sort((a, b) => a.time - b.time);
+  const pole = list[0].time;
+  return {
+    order: list.map((x) => x.id),
+    rows: list.map((x, i) => ({ pos: i + 1, name: x.d.name, color: x.t.colors.primary, time: x.time >= 999 ? 'keine Zeit' : fmtTime(x.time), gap: i === 0 ? '' : `+${(x.time - pole).toFixed(3)}`, me: x.me })),
+  };
+}
+function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {}): void {
+  const race = kind !== 'free';
   if (race) settings.team = teamOf(DRIVERS[settings.driver] ?? DRIVERS[0]).id;
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(race ? raceConfig() : undefined);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
   physics.setBrakeBias(settings.brakeBias);
-  raceHud.setActive(race);
+  raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
+  document.body.classList.toggle('race', race);
   if (race) {
     settings.telemetry = false;
     hud.setTelemetryVisible(false);
     (document.getElementById('chkTelemetry') as HTMLInputElement).checked = false;
   }
+  lapTimer.enforceLimits = settings.trackLimits;
   lapTimer.reset(0);
   const cam = settings.camera === 'showroom' ? 'chase' : settings.camera;
   rig.setMode(cam, car);
   document.body.classList.remove('showroom');
   (document.getElementById('selTeam') as HTMLSelectElement).value = settings.team;
 }
-const start = setupStart(settings, (mapChanged) => {
+function startGame(): void {
+  launch(settings.mode === 'weekend' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
+}
+raceHud.onFinish = (pos, n, dnf) => {
+  const win = prize(pos, n, settings.laps, settings.aiLevel, dnf);
+  career.money += win;
+  saveCareer(career);
+  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €`;
+};
+raceHud.onQuali = (best) => {
+  const cfg = raceConfig();
+  const g = qualiGrid(cfg, best);
+  const pos = g.rows.findIndex((r) => r.me) + 1;
+  raceHud.showTable(`Qualifying – Startplatz ${pos}`, g.rows, 'Weiter zum Rennen', () => launch('race', { gridOrder: g.order }));
+};
+const start = setupStart(settings, career, (mapChanged) => {
   if (mapChanged) {
     try {
       sessionStorage.setItem('formel.autostart', '1');
@@ -170,8 +230,9 @@ const start = setupStart(settings, (mapChanged) => {
 raceHud.onAgain = startGame;
 raceHud.onMenu = () => {
   raceHud.setActive(false);
+  document.body.classList.remove('race');
   clearAi();
-  physics.restart(undefined);
+  physics.restart(undefined, career.up);
   rig.setMode('showroom', car);
   document.body.classList.add('showroom');
   start.show();
@@ -255,6 +316,8 @@ applyQuality();
 
 // ---------------------------------------------------------------- Hauptschleife
 const input = newInput();
+const slopeTmp = new Float64Array(2);
+const speedFx = document.getElementById('speedfx')!;
 let last = performance.now();
 let fpsAcc = 0;
 let fpsFrames = 0;
@@ -272,11 +335,32 @@ function frame(now: number): void {
 
   controls.update(dt);
   controls.fill(input);
+  {
+    // Aero-Automatik (wie die KI): X-Modus auf der Geraden, Z in Kurven und beim Bremsen; Knopf erzwingt X
+    const sn = physics.out;
+    const straight = input.throttle > 0.9 && input.brake < 0.05 && Math.abs(input.steer) < 0.12 && sn[S.speedKmh] > 180;
+    if (!controls.aeroMode && settings.autoAero && straight) input.aeroX = 1;
+  }
   physics.setInput(input);
 
   if (physics.sample()) {
     const s = physics.out;
-    car.update(s, dt);
+    if (car.lastCompound !== (s[S.compound] | 0)) {
+      car.lastCompound = s[S.compound] | 0;
+      car.setCompound(COMPOUND_ORDER[car.lastCompound] ?? 'medium');
+    }
+    const trk = gameMap.track;
+    let ground = 0;
+    let tilt = 0;
+    if (trk) {
+      ground = trk.heightAt(s[S.x], s[S.y]);
+      trk.slopeAt(s[S.x], s[S.y], slopeTmp);
+      tilt = Math.atan(slopeTmp[0] * Math.cos(s[S.psi]) + slopeTmp[1] * Math.sin(s[S.psi]));
+    }
+    rig.groundY = ground;
+    effects.groundY = ground;
+    if (debris) debris.groundY = ground;
+    car.update(s, dt, ground, tilt);
     updateAi(dt, s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);
@@ -300,6 +384,7 @@ function frame(now: number): void {
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
     hud.update(s, dt, settings.tc, settings.abs);
+    speedFx.style.opacity = String(Math.min(0.85, Math.max(0, (s[S.speedKmh] - 120) / 260)));
     lapTimer.update(s);
     if (!loaded) {
       loaded = true;
@@ -353,7 +438,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; } };
+(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

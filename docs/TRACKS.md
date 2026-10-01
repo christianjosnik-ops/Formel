@@ -35,3 +35,9 @@ Bäume sind Instanzen (ca. 6 500 nah + 3 800 fern). Bei „Niedrig“ bzw. wenn 
 - **Keine Höhen:** Die Physik und Fahrbahn sind eben. Eau Rouge, Raidillon oder Blanchimont verlieren ihre Steigung (racetrack-database enthält keine Höhendaten). Hügel gibt es nur in der Umgebung.
 - Keine Boxengasse (Phase 5), keine Brücken
 - Die Bebauung ist generisch (Tribünen, Boxen), keine Nachbildung einzelner Gebäude
+
+## Höhenprofil, Boxengasse, Ausstattung
+
+- `src/world/elevation.ts`: Höhenprofile (Näherung) für Monza, Spa und Silverstone. `Track.elev`/`grade`/`heightAt()`/`slopeAt()`. Die Physik erhält daraus die Hangabtriebskraft, die Darstellung hebt Strecke, Kerbs, Wände, Tribünen und Gelände entsprechend an; Autos und Kamera folgen der Höhe und neigen sich mit der Steigung.
+- Boxengasse links der Start/Ziel-Geraden (`PIT` in `track.ts`): zusätzliche Breite mit weichen Ein- und Ausfahrten, dünne Boxenmauer (`pitwall`), 22 Boxen, Garagenreihe mit Toren in Teamfarben, Tempo-80-Schilder.
+- `src/render/trackProps.ts`: Bremstafeln (300/200/100 m), Kurvennummern, Fangzäune an schnellen Kurven, Überführungen mit Bannern, Flutlichtmasten.

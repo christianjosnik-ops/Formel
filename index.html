@@ -16,6 +16,7 @@
 <body>
   <canvas id="view"></canvas>
 
+  <div id="speedfx"></div>
   <div id="loading"><div class="spin"></div><div>Physik startet …</div></div>
 
   <!-- HUD -->
@@ -90,30 +91,47 @@
     <div id="board"></div>
     <div id="lights"><i></i><i></i><i></i><i></i><i></i></div>
     <div id="banner"></div>
+    <div id="pitMsg"></div>
+    <div id="tyrePanel">
+      <div id="tyreBadge">M</div>
+      <div id="tyreBars"><div class="tb"><i></i><b>VL</b></div><div class="tb"><i></i><b>VR</b></div><div class="tb"><i></i><b>HL</b></div><div class="tb"><i></i><b>HR</b></div></div>
+      <div id="pitCtl">
+        <div id="cmpSel"><button data-c="soft" class="c-soft">S</button><button data-c="medium" class="c-medium on">M</button><button data-c="hard" class="c-hard">H</button></div>
+        <button id="btnBox">BOX</button>
+      </div>
+    </div>
   </div>
   <div id="results" class="panel hidden">
-    <h2>Ergebnis</h2>
+    <h2 id="resTitle">Ergebnis</h2>
     <div id="resList"></div>
+    <div id="resPrize"></div>
     <div class="resBtns"><button id="resAgain">Neues Rennen</button><button id="resMenu">Hauptmenü</button></div>
   </div>
 
-  <!-- Startbildschirm -->
+  <!-- Hauptmenü -->
   <div id="start" class="hidden">
-    <div class="startBox">
-      <div class="startTitle">FORMEL 2026</div>
-      <div class="startGrid">
-        <label>Modus</label><select id="stMode"><option value="race">Rennen</option><option value="free">Freies Fahren</option></select>
-        <label>Strecke</label><select id="stMap"></select>
-        <label>Fahrer / Team</label><select id="stDriver"></select>
-        <label class="rr">Runden</label><select id="stLaps" class="rr"><option>1</option><option>2</option><option>3</option><option>5</option><option>10</option><option>20</option></select>
-        <label class="rr">Gegner (KI)</label><select id="stAi" class="rr"><option value="-1">Aus (allein fahren)</option><option value="0">Anfänger</option><option value="1">Mittel</option><option value="2">Profi</option><option value="3">Legende</option></select>
-        <label class="rr ra">Starter</label><select id="stField" class="rr ra"><option value="22">22 Autos</option><option value="12">12 Autos</option><option value="6">6 Autos</option></select>
-        <label class="rr ra">Startplatz</label><select id="stGrid" class="rr ra"><option value="pole">Pole Position</option><option value="mid">Mittelfeld</option><option value="last">Letzter Platz</option><option value="random">Zufällig</option></select>
-        <label>Steuerung</label><select id="stControl"><option value="arrows">Pfeiltasten (rechts lenken, links Gas/Bremse)</option><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung</option></select>
-        <label>Fahrhilfen</label><select id="stAssist"><option value="2">Stark (Einsteiger)</option><option value="1">Mittel</option><option value="0">Aus (Profi)</option></select>
-      </div>
-      <button id="stGo">START</button>
-      <div class="muted" id="stHint"></div>
+    <div class="mm">
+      <header>
+        <div class="logo">FORMEL<b>2026</b></div>
+        <nav id="mmTabs">
+          <button data-tab="mode" class="on">Modus</button>
+          <button data-tab="track">Strecke</button>
+          <button data-tab="team">Team</button>
+          <button data-tab="garage">Werkstatt</button>
+          <button data-tab="opts">Einstellungen</button>
+        </nav>
+      </header>
+      <main id="mmBody">
+        <section data-panel="mode" class="panel-on"><div class="cards" id="modeCards"></div></section>
+        <section data-panel="track"><div class="cards" id="trackCards"></div></section>
+        <section data-panel="team"><div id="teamGrid"></div><div id="driverInfo"></div></section>
+        <section data-panel="garage"><div id="garageHead"></div><div class="cards" id="garageCards"></div></section>
+        <section data-panel="opts"><div class="optGrid" id="optGrid"></div></section>
+      </main>
+      <footer>
+        <div id="mmSummary"></div>
+        <button id="stGo">START</button>
+      </footer>
     </div>
   </div>
 
@@ -151,7 +169,7 @@
       <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
 
       <h3>Anzeige</h3>
-      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="cockpit">Cockpit</option><option value="tv">TV</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
+      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="tcam">T-Cam (Airbox)</option><option value="cockpit">Cockpit</option><option value="nose">Frontflügel</option><option value="tv">TV-Regie</option><option value="side">Streckenrand tief</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
       <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
       <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
       <p class="muted" id="buildInfo"></p>

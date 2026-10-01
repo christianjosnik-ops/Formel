@@ -1,6 +1,7 @@
 import { S } from '../physics/layout';
 import type { PhysicsClient } from '../physics/client';
 import { DRIVERS, shortName, teamOf } from '../race/field';
+import { COMPOUND_ORDER, type CompoundId } from '../config/tyres';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -27,15 +28,49 @@ export class RaceHud {
   private finishedShown = false;
   private prevState = -1;
   private lastLap = 0;
+  kind: 'race' | 'quali' = 'race';
+  onQuali: (best: number) => void = () => {};
+  onFinish: (pos: number, n: number, dnf: boolean) => string = () => '';
+  private physics: PhysicsClient | null = null;
+  prizeText = '';
+  private want = false;
+  private wantAt = 0;
+  private cmp: CompoundId = 'medium';
   onAgain: () => void = () => {};
   onMenu: () => void = () => {};
 
+  private sendPit(): void {
+    this.physics?.pit(this.want, this.cmp);
+  }
+
   constructor() {
-    $('resAgain').addEventListener('click', () => this.onAgain());
+    $('btnBox').addEventListener('click', () => {
+      this.want = !this.want;
+      this.wantAt = performance.now();
+      this.sendPit();
+    });
+    document.querySelectorAll<HTMLButtonElement>('#cmpSel button').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.cmp = b.dataset.c as CompoundId;
+        this.sendPit();
+      }),
+    );
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyP' && this.shown) $('btnBox').click();
+    });
+    $('resAgain').addEventListener('click', () => {
+      $('results').classList.add('hidden');
+      const a = this.tableAction;
+      this.tableAction = null;
+      $('resTitle').textContent = 'Ergebnis';
+      if (a) a();
+      else this.onAgain();
+    });
     $('resMenu').addEventListener('click', () => this.onMenu());
   }
 
-  setActive(on: boolean): void {
+  setActive(on: boolean, kind: 'race' | 'quali' = 'race'): void {
+    this.kind = kind;
     $('race').classList.toggle('hidden', !on);
     if (!on) {
       $('results').classList.add('hidden');
@@ -44,10 +79,13 @@ export class RaceHud {
     this.shown = on;
     this.prevState = -1;
     this.lastLap = 0;
+    this.want = false;
+    this.stopsSeen = 0;
   }
 
   update(physics: PhysicsClient, dt: number): void {
     if (!this.shown) return;
+    this.physics = physics;
     const n = physics.carCount;
     if (n === 0) return;
     const me = physics.out;
@@ -66,14 +104,16 @@ export class RaceHud {
     }
     const total = me[S.raceLaps];
     const lap = Math.min(total, Math.max(1, me[S.raceLap]));
-    $('raceLap').textContent = `RUNDE ${lap}/${total}`;
-    if (total > 1 && lap === total && this.lastLap < total && state === 1) this.say('LETZTE RUNDE', 1.8);
+    const q = this.kind === 'quali';
+    $('raceLap').textContent = q ? `QUALIFYING · RUNDE ${lap}/${total}` : `RUNDE ${lap}/${total}`;
+    if (!q && total > 1 && lap === total && this.lastLap < total && state === 1) this.say('LETZTE RUNDE', 1.8);
     this.lastLap = lap;
-    $('racePos').textContent = `P${me[S.racePos]}/${n}`;
+    $('racePos').textContent = q ? (me[S.raceBest] > 0 ? `Beste ${fmtTime(me[S.raceBest])}` : 'Beste –') : `P${me[S.racePos]}/${n}`;
     if (me[S.raceFinished] > 0.5 && state === 1 && !this.finishedShown) {
-      this.say(`ZIEL · P${me[S.racePos]}`, 99);
+      this.say(q ? 'QUALIFYING BEENDET' : `ZIEL · P${me[S.racePos]}`, 99);
     }
 
+    this.tyres(me);
     this.acc += dt;
     if (this.acc >= 0.2) {
       this.acc = 0;
@@ -82,9 +122,63 @@ export class RaceHud {
     if (state === 2 && !this.finishedShown) {
       this.finishedShown = true;
       this.banner('');
-      this.results(physics, n);
+      if (q) this.onQuali(me[S.raceBest]);
+      else {
+        this.prizeText = this.onFinish(me[S.racePos] | 0, n, me[S.raceOut] > 0.5 || (me[S.raceFinished] < 0.5 && me[S.retired] > 0.5));
+        this.results(physics, n);
+      }
     }
   }
+
+  /** Ergebnistafel (z. B. Qualifying) mit Weiter-Knopf. */
+  showTable(title: string, rows: Array<{ pos: number; name: string; color: string; time: string; gap: string; me: boolean }>, button: string, action: () => void): void {
+    $('resTitle').textContent = title;
+    let html = `<div class="rrow"><span></span><span></span><span></span><span>Zeit</span><span>Abstand</span></div>`;
+    for (const r of rows) html += `<div class="rrow${r.me ? ' me' : ''}"><span>${r.pos}</span><span class="bar" style="background:${r.color}"></span><span>${r.name}</span><span>${r.time}</span><span>${r.gap}</span></div>`;
+    $('resList').innerHTML = html;
+    $('resAgain').textContent = button;
+    $('resPrize').textContent = '';
+    this.tableAction = action;
+    $('results').classList.remove('hidden');
+  }
+  tableAction: (() => void) | null = null;
+
+  private tyres(me: Float64Array): void {
+    const ci = me[S.compound] | 0;
+    const c = COMPOUND_ORDER[ci] ?? 'medium';
+    const badge = $('tyreBadge');
+    badge.textContent = c === 'soft' ? 'S' : c === 'medium' ? 'M' : c === 'hard' ? 'H' : c === 'inter' ? 'I' : 'W';
+    badge.style.borderColor = c === 'soft' ? '#ff3b30' : c === 'medium' ? '#ffd12e' : c === 'hard' ? '#f2f2f2' : c === 'inter' ? '#2ecc40' : '#1f77ff';
+    const bars = $('tyreBars').children;
+    for (let i = 0; i < 4; i++) {
+      const w = me[S.tyreWear + i];
+      const t = me[S.tyreTemp + i];
+      const el = bars[i] as HTMLElement;
+      const fill = el.firstElementChild as HTMLElement;
+      fill.style.height = `${Math.max(3, (1 - w) * 100)}%`;
+      fill.style.background = `hsl(${Math.max(0, 125 * (1 - w * w * 1.1))} 70% 48%)`;
+      el.classList.toggle('cold', t < 75);
+      el.classList.toggle('hot', t > 128);
+    }
+    const st = me[S.pitState];
+    const btn = $('btnBox');
+    btn.classList.toggle('req', st === 1);
+    btn.textContent = st === 1 ? 'BOX ✕' : 'BOX';
+    const next = COMPOUND_ORDER[me[S.pitNext] | 0] ?? this.cmp;
+    document.querySelectorAll<HTMLButtonElement>('#cmpSel button').forEach((b) => b.classList.toggle('on', b.dataset.c === (this.want ? this.cmp : next)));
+    const msg = $('pitMsg');
+    if (st === 1) msg.textContent = 'BOX BOX – Einfahrt links vor der Start/Ziel-Geraden';
+    else if (st === 3) msg.textContent = `REIFENWECHSEL ${me[S.pitTimer].toFixed(1)} s`;
+    else if (st === 4 && this.stopsSeen !== me[S.pitStops]) {
+      this.stopsSeen = me[S.pitStops];
+      this.say('LOS!', 1.5);
+      msg.textContent = '';
+    } else if (me[S.pitLimiter] > 0.5) msg.textContent = 'BOXENGASSE 80 km/h – halte in deiner Box';
+    else msg.textContent = '';
+    if (st === 1) this.want = true;
+    else if (this.want && performance.now() - this.wantAt > 600) this.want = false;
+  }
+  private stopsSeen = 0;
 
   private say(t: string, sec: number): void {
     $('banner').textContent = t;
@@ -107,7 +201,7 @@ export class RaceHud {
 
   private board(physics: PhysicsClient, n: number): void {
     const rows = this.rows(physics, n);
-    const maxRows = window.innerHeight < 560 ? 9 : 22;
+    const maxRows = window.innerHeight < 520 ? 7 : window.innerHeight < 700 ? 12 : 22;
     let idx = rows.map((_, i) => i);
     let myI = rows.findIndex((r) => r === rows.find((x) => x[S.raceDriver] === physics.out[S.raceDriver]));
     if (myI < 0) myI = 0;
@@ -143,6 +237,9 @@ export class RaceHud {
       const best = r[S.raceBest] > 0 ? fmtTime(r[S.raceBest]) : '';
       html += `<div class="rrow${me ? ' me' : ''}"><span>${r[S.racePos]}</span><span class="bar" style="background:${t.colors.primary}"></span><span>${d.name}</span><span>${fmtGap(r as Float64Array)}</span><span>${best}</span></div>`;
     }
+    $('resTitle').textContent = 'Ergebnis';
+    $('resPrize').textContent = this.prizeText;
+    $('resAgain').textContent = 'Neues Rennen';
     $('resList').innerHTML = `<div class="rrow"><span></span><span></span><span></span><span>Abstand</span><span>Beste</span></div>${html}`;
     $('results').classList.remove('hidden');
   }

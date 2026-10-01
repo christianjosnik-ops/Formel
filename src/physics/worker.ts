@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { TEST_CAR_2026 } from '../config/car';
 import { carConfigFor } from '../race/field';
+import { effects, type Upgrades } from '../career';
 import { RaceDirector, selectField, type RaceConfig } from '../race/race';
 import type { GameMap } from '../world/maps';
 import { PHYS } from '../config/physics';
@@ -29,15 +30,31 @@ let stepMsAvg = 0.05;
 let hzAvg = PHYS.hz;
 let lastPost = 0;
 
-function build(race?: RaceConfig): void {
+function build(race?: RaceConfig, upgrades?: Upgrades): void {
   const map = curMap!;
   const n = race ? selectField(race).length : 1;
   const vs: Vehicle[] = [];
-  for (let k = 0; k < n; k++) vs.push(new Vehicle(k === 0 ? structuredClone(TEST_CAR_2026) : carConfigFor()));
+  const fx = upgrades ? effects(upgrades) : null;
+  for (let k = 0; k < n; k++) {
+    const cfg = k === 0 ? structuredClone(TEST_CAR_2026) : carConfigFor();
+    if (k === 0 && fx) {
+      cfg.brakes.maxTorqueFront *= fx.brakes;
+      cfg.brakes.maxTorqueRear *= fx.brakes;
+      cfg.mass.dry += fx.massDelta;
+    }
+    vs.push(new Vehicle(cfg));
+  }
   car = vs[0];
   Object.assign(car.input, playerInput);
   world = new World(map.world, vs);
   if (race) director = new RaceDirector(world, map, race);
+  if (fx) {
+    // Upgrades des Spielers wirken zusätzlich zur Teamleistung
+    car.teamPower *= fx.power;
+    car.teamAero *= fx.aero;
+    car.wearScale *= fx.wear;
+    car.tyreBonus = fx.tyreGrip;
+  }
   else {
     director = null;
     world.reset(0, map.start.x, map.start.y, map.start.psi, 0);
@@ -100,13 +117,13 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (m.type) {
     case 'init': {
       curMap = createMap(m.map);
-      build(m.race);
+      build(m.race, m.upgrades);
       const ready: FromWorker = { type: 'ready', hz: PHYS.hz };
       ctx.postMessage(ready);
       break;
     }
     case 'restart':
-      build(m.race);
+      build(m.race, m.upgrades);
       break;
     case 'input':
       Object.assign(playerInput, m.input);
@@ -120,6 +137,9 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'pause':
       paused = m.paused;
+      break;
+    case 'pit':
+      director?.setPlayerPit(m.request, m.compound);
       break;
     case 'repair':
       world?.repair(0);

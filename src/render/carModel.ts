@@ -85,6 +85,32 @@ function sideDecal(l: Livery): THREE.CanvasTexture {
   });
 }
 
+const SPONSORS = ['APEX', 'VELOCE', 'NOVA', 'TERRA', 'AQUILA', 'STRATOS', 'ORBIT', 'KINETIC'];
+
+/** Sponsorstreifen (erfundene Marken) für Motorabdeckung und Flügelendplatten. */
+function sponsorDecal(l: Livery): THREE.CanvasTexture {
+  return canvasTex(1024, 128, (g) => {
+    g.clearRect(0, 0, 1024, 128);
+    const onLight = luminance(l.primary) > 0.45;
+    let h = 0;
+    for (const ch of l.teamName) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    g.textBaseline = 'middle';
+    for (let i = 0; i < 4; i++) {
+      const name = SPONSORS[(h + i * 3) % SPONSORS.length];
+      g.fillStyle = i % 2 ? (onLight ? l.accent : '#ffffff') : l.secondary;
+      g.font = `${i % 2 ? 800 : 600} ${i % 2 ? 76 : 64}px "Helvetica Neue", Arial, sans-serif`;
+      g.textAlign = 'left';
+      g.fillText(name, 20 + i * 256, 66);
+    }
+  });
+}
+
+function patternOf(l: Livery): number {
+  let h = 7;
+  for (const ch of l.teamName) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
+  return h % 5;
+}
+
 function topDecal(l: Livery): THREE.CanvasTexture {
   return canvasTex(512, 512, (g) => {
     g.clearRect(0, 0, 512, 512);
@@ -153,6 +179,8 @@ uniform vec3 uSecondary;
 uniform vec3 uAccent;
 uniform sampler2D uDecalSide;
 uniform sampler2D uDecalTop;
+uniform sampler2D uSponsor;
+uniform float uPattern;
 `;
 
 // Koordinaten: Objektraum der Karosserie (x vorn, y oben, z rechts), Meter.
@@ -178,6 +206,43 @@ const LIVERY_BODY = `
   // Schweller / Unterkante abgesetzt
   if (P.y < 0.19 && P.x > -1.6 && P.x < 2.4) col = mix(uAccent, carbon, 0.5);
   if (P.y >= 0.19 && P.y < 0.205 && P.x > -1.3 && P.x < 1.5) col = uSecondary;
+  // Teamspezifische Lackierung (Muster 0..4)
+  if (P.x > -1.45 && P.x < 2.3 && P.y > 0.2 && N.y > -0.2) {
+    if (uPattern < 0.5) {
+      // Diagonale Schwungstreifen über Seitenkasten und Motorabdeckung
+      float d = P.x * 0.62 + az * 1.15 - P.y * 0.35;
+      if (fract(d * 1.6) < 0.16 && P.x < 1.6) col = uSecondary;
+    } else if (uPattern < 1.5) {
+      // zweifarbig: Nase und Front in Zweitfarbe, Kante abgesetzt
+      if (P.x > 1.25 + 0.5 * az) col = uSecondary;
+      if (abs(P.x - (1.25 + 0.5 * az)) < 0.025) col = uAccent;
+    } else if (uPattern < 2.5) {
+      // Pfeilspitze (Chevron) auf der Nase
+      if (P.x > 1.1 && P.x < 2.3 && abs(fract((P.x - az * 1.3) * 2.2) - 0.5) < 0.13) col = uSecondary;
+    } else if (uPattern < 3.5) {
+      // Seitenkasten-Klinge: unterer Bereich in Zweitfarbe
+      if (P.y < 0.42 - 0.2 * max(0.0, P.x) * 0.2 && P.x > -1.0 && P.x < 1.4 && az > 0.25) col = uSecondary;
+    } else {
+      // Motorabdeckung zweifarbig, Hecksektion dunkel
+      if (P.x < -0.6 && N.y > 0.3) col = mix(col, uSecondary, 0.85);
+      if (P.x < -1.2) col = mix(col, uAccent, 0.5);
+    }
+  }
+  // Sponsorstreifen: Seite der Motorabdeckung und Flügelendplatten
+  if (abs(N.z) > 0.55) {
+    if (az > 0.08 && az < 0.5 && P.x > -1.45 && P.x < -0.35 && P.y > 0.5 && P.y < 0.72) {
+      float u = (P.x + 1.45) / 1.1;
+      if (P.z < 0.0) u = 1.0 - u;
+      vec4 d = texture2D(uSponsor, vec2(u, (P.y - 0.5) / 0.22));
+      col = mix(col, d.rgb, d.a);
+    }
+    if (P.x < -1.5 && P.y > 0.5 && az > 0.38) {
+      float u = (P.x + 1.95) / 0.55;
+      if (P.z < 0.0) u = 1.0 - u;
+      vec4 d = texture2D(uSponsor, vec2(u * 0.5, 0.5 + (P.y - 0.55) * 1.5));
+      col = mix(col, d.rgb, d.a * 0.9);
+    }
+  }
   // Halo + Spiegel in Karbon
   if (P.x > -0.06 && P.x < 0.95 && P.y > 0.74 && az < 0.34) col = carbon;
   // Seitenkasten-Dekor
@@ -231,6 +296,8 @@ export class CarModel {
   private readonly helmet = new THREE.Group();
   private readonly brakeLightMats: THREE.MeshStandardMaterial[] = [];
   private readonly dent: DentUniforms;
+  private readonly compoundU = { value: new THREE.Color() };
+  lastCompound = -1;
   private readonly spinAngle = new Float64Array(4);
   private readonly tmp = new THREE.Vector3();
   readonly livery: Livery;
@@ -261,6 +328,7 @@ export class CarModel {
     });
 
     // ---- Materialien ----
+    this.compoundU.value.set(COMPOUND_COLOR[livery.compound ?? 'medium']);
     const primary = new THREE.Color(livery.primary);
     const secondary = new THREE.Color(livery.secondary);
     const accent = new THREE.Color(livery.accent);
@@ -270,18 +338,29 @@ export class CarModel {
       uAccent: { value: accent },
       uDecalSide: { value: sideDecal(livery) },
       uDecalTop: { value: topDecal(livery) },
+      uSponsor: { value: sponsorDecal(livery) },
+      uPattern: { value: patternOf(livery) },
     };
     const paint = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.28, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.06 });
     patchMaterial(paint, 'f1-livery', this.dent, { decl: LIVERY_DECL, body: LIVERY_BODY, uniforms: liveryUniforms });
     const carbon = new THREE.MeshStandardMaterial({ color: 0x0e0f11, roughness: 0.42, metalness: 0.4 });
-    patchMaterial(carbon, 'f1-carbon', this.dent);
+    patchMaterial(carbon, 'f1-carbon', this.dent, {
+      decl: '',
+      body: `{
+  vec2 w = vec2(vOP.x + vOP.z * 0.5, vOP.y + vOP.z * 0.5) * 140.0;
+  float ck = step(0.5, fract(w.x)) == step(0.5, fract(w.y)) ? 1.0 : 0.0;
+  float tw = 0.78 + 0.34 * ck * (0.6 + 0.4 * sin(w.x * 6.2831));
+  diffuseColor.rgb *= tw;
+}`,
+      uniforms: {},
+    });
     const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a1014, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
     const rubber = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.93, metalness: 0 });
     const sidewall = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
     patchMaterial(sidewall, 'f1-sidewall', this.dent, {
       decl: SIDEWALL_DECL,
       body: SIDEWALL_BODY,
-      uniforms: { uCompound: { value: new THREE.Color(COMPOUND_COLOR[livery.compound ?? 'medium']) } },
+      uniforms: { uCompound: this.compoundU },
     });
     const cover = new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: 0.3, metalness: 0.85 });
     const led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x39c6ff, emissiveIntensity: 1.6 });
@@ -425,10 +504,10 @@ export class CarModel {
   }
 
   /** Aktualisiert Transformationen und Schadensdarstellung aus einem (interpolierten) Snapshot. */
-  update(snap: Float64Array, dt: number): void {
+  update(snap: Float64Array, dt: number, ground = 0, tilt = 0): void {
     const cfg = this.cfg;
-    this.root.position.set(snap[S.x], 0, -snap[S.y]);
-    this.root.rotation.set(0, snap[S.psi], 0);
+    this.root.position.set(snap[S.x], ground, -snap[S.y]);
+    this.root.rotation.set(0, snap[S.psi], tilt);
     this.pivot.position.y = cfg.geometry.cgHeight - snap[S.heave];
     // Nick: positiv = Nase tiefer -> Rotation um z negativ; Wanken: positiv = rechts tiefer -> Rotation um x positiv.
     this.pivot.rotation.set(snap[S.roll], 0, -snap[S.pitch], 'YZX');
@@ -474,6 +553,18 @@ export class CarModel {
       a[i].set(snap[o], snap[o + 1], snap[o + 2], Math.max(snap[o + 7], 0.05));
       b[i].set(snap[o + 3], snap[o + 4], snap[o + 5], snap[o + 6]);
     }
+  }
+
+  /** Punkt in Karosseriekoordinaten (x vorn, y oben, z rechts) in Weltkoordinaten. */
+  attach(x: number, y: number, z: number, target: THREE.Vector3): THREE.Vector3 {
+    this.tmp.set(x, y, z);
+    this.shell.updateWorldMatrix(true, false);
+    return this.shell.localToWorld(target.copy(this.tmp));
+  }
+
+  /** Reifenmischung (Farbring der Flanke). */
+  setCompound(id: string): void {
+    this.compoundU.value.set(COMPOUND_COLOR[id as keyof typeof COMPOUND_COLOR] ?? '#ffd12e');
   }
 
   setFirstPerson(on: boolean): void {

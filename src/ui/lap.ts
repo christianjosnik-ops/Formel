@@ -25,6 +25,8 @@ export class LapTimer {
   private bestTime = Infinity;
   private lastTime = NaN;
   private invalid = false;
+  /** Streckenlimits gelten nur, wenn aktiviert (Standard: aus). */
+  enforceLimits = false;
   private started = false;
   private off = 0;
   private miniBase: HTMLCanvasElement | null = null;
@@ -118,7 +120,7 @@ export class LapTimer {
       const w = p.lat >= 0 ? t.wl[p.i] : t.wr[p.i];
       const over = Math.abs(p.lat) - w;
       this.off = over;
-      if (over > 1.1 && this.started) this.invalid = true;
+      if (this.enforceLimits && over > 1.1 && this.started) this.invalid = true;
     }
     this.lapNo.textContent = `RUNDE ${this.lap}${this.started ? '' : ' · OUT'}`;
     this.lapTime.textContent = fmt(this.started ? now - this.lapStart : 0);
@@ -128,7 +130,7 @@ export class LapTimer {
     if (this.invalid) {
       this.warn.textContent = 'STRECKENLIMIT – RUNDE UNGÜLTIG';
       this.warn.className = 'bad';
-    } else if (this.off > 0.2) {
+    } else if (this.enforceLimits && this.off > 0.2) {
       this.warn.textContent = 'STRECKENLIMIT';
       this.warn.className = '';
     } else this.warn.textContent = '';

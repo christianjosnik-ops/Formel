@@ -41,7 +41,8 @@ export function setupTouchPads(controls: Controls): void {
     let id = -1;
     const apply = (e: PointerEvent) => {
       const r = pad.getBoundingClientRect();
-      const v = Math.max(0, Math.min(1, (r.bottom - e.clientY) / (r.height * 0.88)));
+      const arrows = document.body.classList.contains('arrows');
+      const v = arrows ? 1 : Math.max(0, Math.min(1, (r.bottom - e.clientY) / (r.height * 0.88)));
       set(v);
       fill.style.height = `${v * 100}%`;
     };
@@ -64,8 +65,30 @@ export function setupTouchPads(controls: Controls): void {
     pad.addEventListener('pointerup', end);
     pad.addEventListener('pointercancel', end);
   };
-  pedal(gasPad, gasFill, (v) => (controls.touchThrottle = v));
-  pedal(brakePad, brakeFill, (v) => (controls.touchBrake = v));
+  // Im Pfeil-Layout sind die Pedale Tasten (voll bei Berührung) mit weicher Rampe
+  let gasT = 0;
+  let brkT = 0;
+  let gasC = 0;
+  let brkC = 0;
+  pedal(gasPad, gasFill, (v) => (gasT = v));
+  pedal(brakePad, brakeFill, (v) => (brkT = v));
+  let pl = performance.now();
+  const pedalLoop = () => {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - pl) / 1000);
+    pl = now;
+    if (document.body.classList.contains('arrows')) {
+      gasC += Math.sign(gasT - gasC) * Math.min(Math.abs(gasT - gasC), (gasT > gasC ? 5 : 12) * dt);
+      brkC += Math.sign(brkT - brkC) * Math.min(Math.abs(brkT - brkC), (brkT > brkC ? 7 : 14) * dt);
+    } else {
+      gasC = gasT;
+      brkC = brkT;
+    }
+    controls.touchThrottle = gasC;
+    controls.touchBrake = brkC;
+    requestAnimationFrame(pedalLoop);
+  };
+  requestAnimationFrame(pedalLoop);
 
   // Pfeiltasten (rechts): digitale Lenkung mit Rampe, beide gedrückt = geradeaus
   let arrowL = 0;

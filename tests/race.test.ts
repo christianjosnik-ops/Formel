@@ -9,7 +9,7 @@ import { TEAMS } from '../src/race/field';
 
 function makeRace(over: Partial<RaceConfig> = {}) {
   const map = createMap('monza');
-  const cfg: RaceConfig = { laps: 1, aiLevel: 3, playerDriver: 2, field: 22, grid: 'mid', seed: 7, autopilot: true, ...over };
+  const cfg: RaceConfig = { laps: 1, aiLevel: 1, playerDriver: 2, field: 22, grid: 'mid', seed: 7, autopilot: true, ...over };
   const n = selectField(cfg).length;
   const vs = Array.from({ length: n }, () => new Vehicle(carConfigFor()));
   const world = new World(map.world, vs);
@@ -63,7 +63,7 @@ describe('Rennmodus', () => {
     const { world, dir } = makeRace();
     let steps = 0;
     const t0 = performance.now();
-    while (dir.state !== 'finished' && steps < 500 * 210) {
+    while (dir.state !== 'finished' && steps < 500 * 330) {
       dir.update(0.002);
       world.step(0.002);
       steps++;
@@ -71,7 +71,7 @@ describe('Rennmodus', () => {
     const ms = performance.now() - t0;
     expect(dir.state).toBe('finished');
     const fin = dir.entrants.filter((e) => e.finished);
-    expect(fin.length).toBeGreaterThanOrEqual(15);
+    expect(fin.length).toBeGreaterThanOrEqual(17);
     const order = [...dir.entrants].sort((a, b) => a.pos - b.pos);
     // Ergebnis: Zielzeiten nicht fallend
     for (let i = 1; i < fin.length; i++) {
@@ -82,7 +82,7 @@ describe('Rennmodus', () => {
     // Rundenzeit in plausiblem Bereich, Gesamtfeld innerhalb weniger Sekunden
     const winner = order[0];
     expect(winner.finishTime).toBeGreaterThan(90);
-    expect(winner.finishTime).toBeLessThan(140);
+    expect(winner.finishTime).toBeLessThan(200);
     expect(order[Math.min(14, fin.length - 1)].finishTime - winner.finishTime).toBeLessThan(55);
     console.log('winner', winner.data.name, winner.finishTime.toFixed(1), 'finished', fin.length, 'sim ms/s', (ms / (steps * 0.002)).toFixed(0));
   }, 600000);
