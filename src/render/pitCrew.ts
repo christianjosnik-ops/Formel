@@ -31,6 +31,7 @@ class Crew {
   readonly mixer: THREE.AnimationMixer;
   readonly action: THREE.AnimationAction;
   readonly suit: THREE.MeshStandardMaterial;
+  readonly accent: THREE.MeshStandardMaterial;
   readonly ringNew: THREE.MeshStandardMaterial;
   readonly ringOld: THREE.MeshStandardMaterial;
   readonly lift: THREE.Object3D;
@@ -42,6 +43,7 @@ class Crew {
   constructor(src: THREE.Group, clip: THREE.AnimationClip) {
     this.group = src.clone(true);
     this.suit = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.62, vertexColors: true });
+    this.accent = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.62, vertexColors: true });
     this.ringNew = new THREE.MeshStandardMaterial({ color: 0xffd12e, roughness: 0.5, vertexColors: false });
     this.ringOld = this.ringNew.clone();
     this.group.traverse((o) => {
@@ -49,6 +51,7 @@ class Crew {
       if (!m.isMesh) return;
       const mat = m.material as THREE.Material;
       if (mat.name === 'Suit') m.material = this.suit;
+      else if (mat.name === 'SuitAccent') m.material = this.accent;
       else if (mat.name === 'TyreRing') m.material = this.ringNew;
       else if (mat.name === 'TyreRingOld') m.material = this.ringOld;
       m.frustumCulled = false;
@@ -134,6 +137,8 @@ export class PitCrewRenderer {
         const team = teamOf(DRIVERS[Math.min(DRIVERS.length - 1, Math.max(0, c.view[S.raceDriver] | 0))]);
         crew.suit.color.set(team.colors.primary);
         if (crew.suit.color.r + crew.suit.color.g + crew.suit.color.b < 0.5) crew.suit.color.set(team.colors.accent || team.colors.secondary);
+        crew.accent.color.set(team.colors.secondary);
+        if (crew.accent.color.r + crew.accent.color.g + crew.accent.color.b < 0.12) crew.accent.color.set(0x303338);
         crew.group.visible = true;
         crew.setShadows(c.k === 0);
       }

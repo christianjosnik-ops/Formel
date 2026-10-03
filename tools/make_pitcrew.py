@@ -50,6 +50,7 @@ M_SUIT = mat('Suit', 0.65)
 M_MISC = mat('CrewMisc', 0.55, 0.15)
 M_METAL = M_MISC
 M_RUBBER = M_MISC
+M_ACC = mat('SuitAccent', 0.6)
 M_RING = mat('TyreRing', 0.5)
 M_RING_OLD = mat('TyreRingOld', 0.5)
 
@@ -260,12 +261,13 @@ class Human:
         m.finish(self.pelvis)
         m = Mesh(f'{self.name}_torsoMesh')
         # Brustkorb: oben breit, Taille schmaler
-        lathe(m, [(0.14, 0.0), (0.15, 0.12), (0.17, 0.3), (0.165, 0.42), (0.13, 0.5), (0.05, 0.54)], M_SUIT, (1, 1, 1), seg=14, scale=(0.8 * s, 1.18 * s, s))
+        lathe(m, [(0.14, 0.0), (0.15, 0.12), (0.17, 0.3), (0.165, 0.42), (0.13, 0.5), (0.05, 0.54)], M_SUIT, (1, 1, 1), seg=24, scale=(0.8 * s, 1.18 * s, s))
         # Brust-Sponsorfeld und Reißverschluss (Trimm)
-        box(m, (0.135 * s, 0.07 * s, 0.34 * s), (0.01, 0.12 * s, 0.07 * s), M_MISC, SUIT_TRIM)
+        box(m, (0.135 * s, 0.07 * s, 0.34 * s), (0.01, 0.12 * s, 0.07 * s), M_ACC, (1, 1, 1))
+        ellipsoid(m, (0.0, 0.0, 0.47 * s), (0.11 * s, 0.2 * s, 0.045 * s), M_ACC, (1, 1, 1), seg=18, rings=6)  # Schulterpasse
         box(m, (0.136 * s, 0.0, 0.25 * s), (0.008, 0.012, 0.3 * s), M_MISC, (0.2, 0.2, 0.22))
         # Schulterblätter / Rucksack-Rundung am Rücken
-        ellipsoid(m, (-0.07 * s, 0, 0.36 * s), (0.07 * s, 0.17 * s, 0.14 * s), M_SUIT, (0.95, 0.95, 0.95), seg=10, rings=6)
+        ellipsoid(m, (-0.085 * s, 0, 0.33 * s), (0.05 * s, 0.15 * s, 0.13 * s), M_SUIT, (0.95, 0.95, 0.95), seg=16, rings=8)
         m.finish(self.spine)
         # Hals / Kopf mit Sturmhaube, Helm, Visier, Headset
         m = Mesh(f'{self.name}_headMesh')
@@ -283,6 +285,7 @@ class Human:
         for sd in (1, -1):
             m = Mesh(f'{self.name}_legMesh{sd}')
             capsule(m, (0, 0, 0), (0, 0, -self.thigh), 0.088 * s, 0.065 * s, M_SUIT, (1, 1, 1))
+            box(m, (0.0, sd * 0.082 * s, -0.22 * s), (0.025, 0.012, 0.3 * s), M_ACC, (1, 1, 1))  # Seitenstreifen
             m.finish(self.hip[sd])
             m = Mesh(f'{self.name}_shinMesh{sd}')
             capsule(m, (0, 0, 0), (0, 0, -self.shin), 0.062 * s, 0.05 * s, M_SUIT, (0.97, 0.97, 0.97))
@@ -297,7 +300,7 @@ class Human:
             m = Mesh(f'{self.name}_upperMesh{sd}')
             ellipsoid(m, (0, 0, 0), (0.062 * s, 0.062 * s, 0.062 * s), M_SUIT, (1, 1, 1), seg=10, rings=6)  # Schultergelenk
             capsule(m, (0, 0, 0), (0, 0, -self.upper), 0.052 * s, 0.043 * s, M_SUIT, (1, 1, 1))
-            box(m, (0, sd * 0.045 * s, -0.12 * s), (0.02, 0.012, 0.18 * s), M_MISC, SUIT_TRIM)
+            box(m, (0, sd * 0.05 * s, -0.12 * s), (0.02, 0.012, 0.2 * s), M_ACC, (1, 1, 1))
             m.finish(self.shoulder[sd])
             m = Mesh(f'{self.name}_foreMesh{sd}')
             capsule(m, (0, 0, 0), (0, 0, -self.fore), 0.043 * s, 0.036 * s, M_SUIT, (0.97, 0.97, 0.97))
