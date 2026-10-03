@@ -24,7 +24,7 @@ export function brakeLimit(v: number): number {
 
 /** Maximale Beschleunigung [m/s^2] (Traktion/Leistung/Luftwiderstand). */
 export function accelLimit(v: number): number {
-  const power = 600e3 / (868 * Math.max(v, 4));
+  const power = 540e3 / (868 * Math.max(v, 4));
   const traction = 13.5;
   return Math.min(traction, power) - 0.00048 * v * v;
 }

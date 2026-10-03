@@ -248,13 +248,13 @@ function facadeTexture(): THREE.CanvasTexture {
     g.fillStyle = '#d6d9dd';
     g.fillRect(0, 0, 512, 128);
     // Fensterband
-    g.fillStyle = '#1b2a38';
+    g.fillStyle = '#4d6a82';
     g.fillRect(0, 18, 512, 40);
-    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillStyle = 'rgba(255,255,255,0.45)';
     for (let x = 0; x < 512; x += 64) g.fillRect(x + 4, 22, 26, 32);
     // Garagentore
     for (let i = 0; i < 8; i++) {
-      g.fillStyle = i % 2 ? '#2d3138' : '#3a3f48';
+      g.fillStyle = i % 2 ? '#69707a' : '#767d88';
       g.fillRect(i * 64 + 6, 70, 52, 54);
       g.fillStyle = 'rgba(255,255,255,0.12)';
       for (let y = 74; y < 122; y += 6) g.fillRect(i * 64 + 8, y, 48, 1);
@@ -367,6 +367,8 @@ function addGrandstandModules(scene: THREE.Scene, t: Track, s0: number, s1: numb
     const im = new THREE.InstancedMesh(part.geo, part.mat, mats.length);
     mats.forEach((m, k) => im.setMatrixAt(k, m));
     im.computeBoundingSphere();
+    im.castShadow = true;
+    im.receiveShadow = true;
     scene.add(im);
   }
 }
@@ -516,7 +518,7 @@ function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, si
   const facade = facadeTexture();
   const fm = new THREE.MeshStandardMaterial({ map: facade, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide });
   const roof = new THREE.MeshStandardMaterial({ color: 0x9da2a8, roughness: 0.7, side: THREE.DoubleSide });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.8, side: THREE.DoubleSide });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x8e949b, roughness: 0.65, metalness: 0.2, side: THREE.DoubleSide });
   // Garagenreihe direkt hinter der Boxengasse (Mauer bei barrierL)
   const off = (i: number) => (side === 1 ? t.barrierL[i] : t.barrierR[i]) + 0.4;
   const segs: Seg[] = [
@@ -530,7 +532,7 @@ function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, si
   scene.add(tower);
   // Garagentore und Team-Schilder: je Box ein dunkles Tor mit farbigem Band
   const n = t.pit.boxes.length;
-  const doors = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 4.2), new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.9 }), n);
+  const doors = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 4.2), new THREE.MeshStandardMaterial({ color: 0x5b616b, roughness: 0.75 }), n);
   const bands = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 1.1), new THREE.MeshBasicMaterial({}), n);
   const m4 = new THREE.Matrix4();
   const col = new THREE.Color();
@@ -820,7 +822,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     return m;
   };
   // gepflegter Rasen bis zur Barriere
-  const lawnMat = grassPatch(layerMat(lawnTex, 1, { color: 0xc4dba6, roughness: 1, normalMap: surfaceNormal('grass') }), 'grass-lawn-n', 0.6);
+  const lawnMat = grassPatch(layerMat(lawnTex, 1, { color: 0xaec797, roughness: 1, normalMap: surfaceNormal('grass') }), 'grass-lawn-n', 0.6);
   add(ribbon(t, 0.004, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   add(ribbon(t, 0.004, (i) => -(t.wr[i] + t.barrierR[i]), (i) => -(t.wr[i] + t.kerbR[i]), () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   // Erdstreifen zwischen Asphalt/Kerb und Zaun (wie in der Vorlage): wechselnde Breite, weiche Ränder
@@ -1144,10 +1146,13 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     // ---- Blender-Objekte nahe der Strecke: detaillierte Bäume, Büsche, Grasbüschel (Stroh und Grün gemischt) ----
     if (scenery) {
       const fm = Math.max(th.foliage[0], th.foliage[1], th.foliage[2]);
-      const tintCol = (k: number, boost: number) =>
-        col.setRGB((0.6 + 0.4 * (th.foliage[0] / fm)) * k * boost, (0.6 + 0.4 * (th.foliage[1] / fm)) * k * boost, (0.6 + 0.4 * (th.foliage[2] / fm)) * k * boost);
+      const tintCol = (k: number, boost: number) => {
+        // Farbvarianz je Baum: gelblich bis bläulich-grün, weniger knallig
+        const h = (rnd() - 0.5) * 0.34;
+        return col.setRGB((0.6 + 0.4 * (th.foliage[0] / fm)) * k * boost * (1 + h * 1.1), (0.6 + 0.4 * (th.foliage[1] / fm)) * k * boost * (1 - Math.abs(h) * 0.25), (0.6 + 0.4 * (th.foliage[2] / fm)) * k * boost * (1 - h * 0.9));
+      };
       const isFoliage = (m: THREE.Material) => /Leaf|Needle|Bush/i.test(m.name);
-      const place = (name: string, items: Array<{ x: number; y: number; h: number; tint: number }>, boost: number, add: (im: THREE.InstancedMesh, n: number) => void) => {
+      const place = (name: string, items: Array<{ x: number; y: number; h: number; tint: number }>, boost: number, add: (im: THREE.InstancedMesh, n: number) => void, shadow = false) => {
         if (!items.length) return;
         const hh = scenery.height(name);
         for (const part of scenery.parts(name)) {
@@ -1163,6 +1168,8 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
             im.setMatrixAt(k, m4);
             if (leafy) im.setColorAt(k, tintCol(it.tint, boost));
           });
+          im.castShadow = shadow;
+          im.receiveShadow = shadow;
           add(im, items.length);
         }
       };
@@ -1185,11 +1192,11 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
         (buckets.get(nm) ?? buckets.set(nm, []).get(nm)!).push(tr);
       }
       for (const [nm, arr] of buckets) {
-        place(nm, arr, nm.includes('conifer') ? 1.7 : 1.15, (im, n) => {
+        place(nm, arr, nm.includes('conifer') ? 1.45 : 0.92, (im, n) => {
           im.frustumCulled = false;
           scene.add(im);
           treeMeshes.push({ im, total: n });
-        });
+        }, true);
       }
       // Mittel- und Ferndistanz: Blender-LOD-Bäume (je ~250 Flächen), in Chunks für Frustum-Culling
       {
@@ -1206,11 +1213,11 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
         }
         for (const cm of chunkMap.values()) {
           for (const [nm, arr] of cm) {
-            place(nm, arr, nm.includes('conifer') ? 1.7 : 1.15, (im, n) => {
+            place(nm, arr, nm.includes('conifer') ? 1.45 : 0.92, (im, n) => {
               im.computeBoundingSphere();
               scene.add(im);
               treeMeshes.push({ im, total: n });
-            });
+            }, true);
           }
         }
       }

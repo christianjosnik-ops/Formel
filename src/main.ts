@@ -343,6 +343,10 @@ function applyQuality(): void {
   bundle.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = settings.quality !== 'low';
   bundle.sun.castShadow = settings.quality !== 'low';
+  bundle.setPost(settings.quality !== 'low');
+  if (settings.quality === 'low') bundle.setShadow(1024, 20);
+  else if (maxPixelRatio > 1.5 && navigator.maxTouchPoints > 0) bundle.setShadow(2048, 28);
+  else bundle.setShadow(3072, 34);
 }
 applyQuality();
 
@@ -473,7 +477,7 @@ function frame(now: number): void {
       if (autostart) startGame();
     }
   }
-  renderer.render(scene, camera);
+  bundle.render();
 
   // FPS + adaptive Auflösung
   fpsAcc += dt;
@@ -497,6 +501,9 @@ function frame(now: number): void {
       if (lowCount >= 2 && pixelRatio > 1) {
         pixelRatio = Math.max(1, pixelRatio - 0.25);
         bundle.setPixelRatio(pixelRatio);
+        lowCount = 0;
+      } else if (lowCount >= 3 && bundle.postOn()) {
+        bundle.setPost(false);
         lowCount = 0;
       } else if (lowCount >= 4 && renderer.shadowMap.enabled) {
         renderer.shadowMap.enabled = false;

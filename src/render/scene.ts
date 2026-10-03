@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { grassTexture } from './worldVisuals';
 
 export interface SceneBundle {
@@ -10,6 +15,12 @@ export interface SceneBundle {
   resize: () => void;
   setPixelRatio: (r: number) => void;
   updateEnvironment: (carX: number, carZ: number) => void;
+  /** Rendert mit Nachbearbeitung (Bloom, Farbkorrektur, Vignette), falls aktiv. */
+  render: () => void;
+  setPost: (on: boolean) => void;
+  postOn: () => boolean;
+  /** Schattenkarte: Auflösung und halbe Kantenlänge [m]. */
+  setShadow: (size: number, half: number) => void;
 }
 
 const TILE = 8; // Meter pro Texturkachel
@@ -90,7 +101,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   scene.background = sky;
   scene.environmentIntensity = 1.0;
   scene.fog = new THREE.Fog(0xb9c4ca, 350, 2000);
-  pmrem.dispose();
+  new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/sky.jpg`, (t) => {
+    t.mapping = THREE.EquirectangularReflectionMapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    const rt = pmrem.fromEquirectangular(t);
+    scene.environment = rt.texture;
+    scene.background = t;
+    pmrem.dispose();
+  });
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 6000);
 
@@ -98,16 +117,17 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(3072, 3072);
   const sc = sun.shadow.camera;
-  sc.left = -7;
-  sc.right = 7;
-  sc.top = 7;
-  sc.bottom = -7;
-  sc.near = 1;
-  sc.far = 60;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.03;
+  sc.left = -34;
+  sc.right = 34;
+  sc.top = 34;
+  sc.bottom = -34;
+  sc.near = 10;
+  sc.far = 150;
+  sun.shadow.bias = -0.00025;
+  sun.shadow.normalBias = 0.05;
+  sun.shadow.radius = 2.5;
   scene.add(sun);
   scene.add(sun.target);
 
@@ -124,11 +144,38 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   ground.receiveShadow = true;
   scene.add(ground);
 
+  // Nachbearbeitung: HDR-Rendertarget mit MSAA, Bloom, leichte Farbkorrektur und Vignette, dann Tone-Mapping
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }),
+  );
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 0.92);
+  composer.addPass(bloom);
+  const grade = new ShaderPass({
+    uniforms: { tDiffuse: { value: null }, uVig: { value: 0.28 }, uSat: { value: 1.06 }, uCon: { value: 1.07 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig; uniform float uSat; uniform float uCon; varying vec2 vUv;
+void main(){
+  vec4 c = texture2D(tDiffuse, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  c.rgb = mix(vec3(l), c.rgb, uSat);
+  c.rgb = (c.rgb - 0.18) * uCon + 0.18;
+  vec2 d = vUv - 0.5; d.x *= 1.15;
+  c.rgb *= 1.0 - uVig * smoothstep(0.35, 0.95, length(d) * 1.35);
+  gl_FragColor = vec4(max(c.rgb, 0.0), c.a);
+}`,
+  });
+  composer.addPass(grade);
+  composer.addPass(new OutputPass());
+  let post = true;
   const sunDir = new THREE.Vector3(-0.55, 0.78, 0.3).normalize();
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   };
@@ -146,9 +193,29 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
     setPixelRatio: (r: number) => {
       renderer.setPixelRatio(r);
       renderer.setSize(window.innerWidth, window.innerHeight, false);
+      composer.setPixelRatio(r);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    },
+    render: () => {
+      if (post) composer.render();
+      else renderer.render(scene, camera);
+    },
+    setPost: (on: boolean) => {
+      post = on;
+    },
+    postOn: () => post,
+    setShadow: (size: number, half: number) => {
+      sun.shadow.mapSize.set(size, size);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+      sc.left = -half;
+      sc.right = half;
+      sc.top = half;
+      sc.bottom = -half;
+      sc.updateProjectionMatrix();
     },
     updateEnvironment: (cx: number, cz: number) => {
-      sun.position.set(cx + sunDir.x * 30, sunDir.y * 30, cz + sunDir.z * 30);
+      sun.position.set(cx + sunDir.x * 70, sunDir.y * 70, cz + sunDir.z * 70);
       sun.target.position.set(cx, 0, cz);
       // Boden in ganzen Kacheln nachführen. Textur-Offset ausgleichen, damit sie auf der Welt stehen bleibt.
       const gx = Math.round(cx / TILE) * TILE;

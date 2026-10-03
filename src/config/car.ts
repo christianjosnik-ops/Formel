@@ -254,7 +254,7 @@ export const TEST_CAR_2026: CarConfig = {
     yawDrag: 2.0,
   },
   engine: {
-    iceMaxPower: 385e3,
+    iceMaxPower: 345e3,
     idleRpm: 4500,
     revLimit: 15000,
     launchRpm: 6800,
@@ -273,8 +273,8 @@ export const TEST_CAR_2026: CarConfig = {
     fuelEnergy: 17.6e6,
   },
   ers: {
-    kMaxPower: 330e3,
-    kMaxWheelTorque: 2000,
+    kMaxPower: 290e3,
+    kMaxWheelTorque: 1800,
     vTaperStart: 280 / 3.6,
     vTaperEnd: 345 / 3.6,
     efficiency: 0.95,
