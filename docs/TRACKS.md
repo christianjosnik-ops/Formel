@@ -41,3 +41,7 @@ Bäume sind Instanzen (ca. 6 500 nah + 3 800 fern). Bei „Niedrig“ bzw. wenn 
 - `src/world/elevation.ts`: Höhenprofile (Näherung) für Monza, Spa und Silverstone. `Track.elev`/`grade`/`heightAt()`/`slopeAt()`. Die Physik erhält daraus die Hangabtriebskraft, die Darstellung hebt Strecke, Kerbs, Wände, Tribünen und Gelände entsprechend an; Autos und Kamera folgen der Höhe und neigen sich mit der Steigung.
 - Boxengasse links der Start/Ziel-Geraden (`PIT` in `track.ts`): zusätzliche Breite mit weichen Ein- und Ausfahrten, dünne Boxenmauer (`pitwall`), 22 Boxen, Garagenreihe mit Toren in Teamfarben, Tempo-80-Schilder.
 - `src/render/trackProps.ts`: Bremstafeln (300/200/100 m), Kurvennummern, Fangzäune an schnellen Kurven, Überführungen mit Bannern, Flutlichtmasten.
+
+## Optik nach Vorlage (Drift-Strecke)
+
+Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientieren sich an einer vom Nutzer gelieferten Drift-Strecke: schwarzer Drei-Holm-Zaun, orange-weiße Leitpfosten, hohe Werbefahnen und Tafeln (erfundene Marken), Chevron-Schilder, Erdstreifen zwischen Asphalt und Zaun, bläulich-graues Asphalt, Bäume aus Blattkarten mit prozeduraler Laubtextur (`trackVisuals.ts`, `trackProps.ts`, `worldVisuals.ts`).

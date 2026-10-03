@@ -775,12 +775,38 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   const lawnMat = grassPatch(layerMat(lawnTex, 1, { color: 0xb6d19a, roughness: 1 }), 'grass-lawn', 0.6);
   add(ribbon(t, 0.004, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   add(ribbon(t, 0.004, (i) => -(t.wr[i] + t.barrierR[i]), (i) => -(t.wr[i] + t.kerbR[i]), () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
+  // Erdstreifen zwischen Asphalt/Kerb und Zaun (wie in der Vorlage): wechselnde Breite, weiche Ränder
+  {
+    const dtex = canvasTex(256, 256, (g) => {
+      g.fillStyle = '#85673f';
+      g.fillRect(0, 0, 256, 256);
+      const rr = mulberry(55);
+      for (let k = 0; k < 2600; k++) {
+        const v = 80 + rr() * 80;
+        g.fillStyle = `rgba(${v + 36},${v},${v - 34},${0.2 + rr() * 0.3})`;
+        g.fillRect(rr() * 256, rr() * 256, 2 + rr() * 5, 2 + rr() * 3);
+      }
+      const grad = g.createLinearGradient(0, 0, 256, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(0.18, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.7, 'rgba(0,0,0,1)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.globalCompositeOperation = 'destination-in';
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 256, 256);
+    });
+    dtex.wrapS = THREE.ClampToEdgeWrapping;
+    const dirtMat = layerMat(dtex, 2, { transparent: true, depthWrite: false, roughness: 1 });
+    const wide = (i: number, k: number) => 1.6 + 2.6 * (0.5 + 0.5 * Math.sin(t.s[i % t.n] / (23 + k * 9) + k)) + 1.2 * (0.5 + 0.5 * Math.sin(t.s[i % t.n] / 7.3 + k * 2));
+    add(ribbon(t, 0.006, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i] - 0.2, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i] + wide(i, 1), (i) => t.gravelL[i] < 1.5, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 9]), dirtMat);
+    add(ribbon(t, 0.006, (i) => -(t.wr[i] + t.kerbR[i] + wide(i, 2)), (i) => -(t.wr[i] + t.kerbR[i]) + 0.2, (i) => t.gravelR[i] < 1.5, (i, _lat, e) => [1 - e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 9]), dirtMat);
+  }
   // Kies
   const gravelMat = layerMat(gravelTex, 2, { roughness: 1 });
   add(ribbon(t, 0.008, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.kerbL[i] + t.gravelL[i], (i) => t.gravelL[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   add(ribbon(t, 0.008, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   // Asphalt
-  const asphaltMat = layerMat(asphalt, 3, { roughness: 0.88, color: 0xb9b9bd });
+  const asphaltMat = layerMat(asphalt, 3, { roughness: 0.88, color: 0xe4e6ee });
   add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i] + t.pitW[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
   // Reifenspur (Ideallinie: zur Kurveninnenseite verschoben)
   {
@@ -866,59 +892,103 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
   const treeMeshes: Array<{ im: THREE.InstancedMesh; total: number }> = [];
   {
     const rnd = mulberry(seed * 7919);
-    const conBuild = (): THREE.BufferGeometry => {
-      const parts: THREE.BufferGeometry[] = [];
-      const trunk = new THREE.CylinderGeometry(0.035, 0.05, 0.3, 6).translate(0, 0.15, 0);
-      const c1 = new THREE.ConeGeometry(0.3, 0.6, 7).translate(0, 0.52, 0);
-      const c2 = new THREE.ConeGeometry(0.22, 0.52, 7).translate(0, 0.86, 0);
-      const c3 = new THREE.ConeGeometry(0.14, 0.4, 7).translate(0, 1.12, 0);
-      const colorize = (g: THREE.BufferGeometry, r: number, gr: number, b: number) => {
-        const pp = g.getAttribute('position');
-        const n = pp.count;
-        const a = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) {
-          const k = 0.62 + 0.5 * Math.min(1, Math.max(0, (pp.getY(i) - 0.3) / 0.9));
-          a.set([r * k, gr * k, b * k], i * 3);
+    // Bäume aus Blattkarten (Alpha-Test) mit prozeduraler Laub-/Nadeltextur: dichte, detaillierte Kronen bei wenig Dreiecken
+    const leafTex = (needle: boolean): THREE.CanvasTexture => {
+      const r2 = mulberry(needle ? 71 : 37);
+      const c = canvasTex(256, 256, (g) => {
+        g.clearRect(0, 0, 256, 256);
+        const cols = needle ? ['#2f6a40', '#3a7d4b', '#285a37', '#4a8c58', '#336f43'] : ['#46803a', '#559a45', '#3d7133', '#6aa854', '#2f5f2a', '#4c8b3d'];
+        const lobes = Array.from({ length: 7 }, () => 0.62 + r2() * 0.45);
+        for (let k = 0; k < (needle ? 1100 : 900); k++) {
+          // Blattpositionen in einer unregelmäßigen Blob-Silhouette (Lappen), nach außen dünner
+          const ang = r2() * 6.283;
+          const lobe = lobes[Math.floor((ang / 6.283) * lobes.length) % lobes.length];
+          const rad = Math.sqrt(r2()) * 118 * lobe;
+          const x = 128 + Math.cos(ang) * rad;
+          const y = 128 + Math.sin(ang) * rad * (needle ? 1.0 : 0.9);
+          g.save();
+          g.translate(x, y);
+          g.rotate(needle ? (r2() - 0.5) * 1.6 - Math.PI / 2 + (x < 128 ? 0.5 : -0.5) : r2() * 6.283);
+          g.fillStyle = cols[Math.floor(r2() * cols.length)];
+          g.beginPath();
+          if (needle) g.ellipse(0, 0, 12 + r2() * 11, 2.2 + r2() * 1.8, 0, 0, 6.283);
+          else g.ellipse(0, 0, 8 + r2() * 10, 4.5 + r2() * 4.5, 0, 0, 6.283);
+          g.fill();
+          g.restore();
         }
-        g.setAttribute('color', new THREE.BufferAttribute(a, 3));
-        return g;
-      };
-      parts.push(colorize(trunk, 0.3, 0.2, 0.12), colorize(c1, 0.75, 0.9, 0.75), colorize(c2, 0.85, 1, 0.85), colorize(c3, 0.95, 1, 0.95));
-      return mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+      });
+      c.wrapS = c.wrapT = THREE.ClampToEdgeWrapping;
+      return c;
+    };
+    const quad = (w: number, h: number, cx: number, cy: number, cz: number, rotY: number, tiltX: number, shadeLo: number, shadeHi: number, centerN: [number, number, number] | null): THREE.BufferGeometry => {
+      const g = new THREE.PlaneGeometry(w, h);
+      g.rotateX(tiltX);
+      g.rotateY(rotY);
+      g.translate(cx, cy, cz);
+      const pp = g.getAttribute('position');
+      const n = pp.count;
+      const cl = new Float32Array(n * 3);
+      const nn = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const k = shadeLo + (shadeHi - shadeLo) * Math.min(1, Math.max(0, (pp.getY(i) - (cy - h / 2)) / h));
+        cl.set([k, k, k], i * 3);
+        if (centerN) {
+          const dx = pp.getX(i) - centerN[0];
+          const dy = pp.getY(i) - centerN[1];
+          const dz = pp.getZ(i) - centerN[2];
+          const l = Math.hypot(dx, dy, dz) || 1;
+          nn.set([dx / l, dy / l, dz / l], i * 3);
+        } else nn.set([0, 1, 0], i * 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(cl, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(nn, 3));
+      return g;
+    };
+    const trunkGeo = (h: number, r0: number, r1: number): THREE.BufferGeometry => {
+      const g = new THREE.CylinderGeometry(r1, r0, h, 6).translate(0, h / 2, 0).toNonIndexed();
+      const n = g.getAttribute('position').count;
+      const cl = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) cl.set([0.3, 0.2, 0.12], i * 3);
+      g.setAttribute('color', new THREE.BufferAttribute(cl, 3));
+      g.deleteAttribute('uv');
+      return g;
+    };
+    const withUv = (g: THREE.BufferGeometry): THREE.BufferGeometry => {
+      if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+      return g;
     };
     const leafBuild = (): THREE.BufferGeometry => {
-      const trunk = new THREE.CylinderGeometry(0.05, 0.07, 0.5, 6).translate(0, 0.25, 0);
-      const soft = (g: THREE.BufferGeometry, cx: number, cy: number, cz: number) => {
-        // kugelförmige Normalen für weiche Beleuchtung der Krone
-        const p = g.getAttribute('position');
-        const n = new Float32Array(p.count * 3);
-        for (let i = 0; i < p.count; i++) {
-          const x = p.getX(i) - cx;
-          const y = p.getY(i) - cy;
-          const z = p.getZ(i) - cz;
-          const l = Math.hypot(x, y, z) || 1;
-          n.set([x / l, y / l, z / l], i * 3);
-        }
-        g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
-        return g;
-      };
-      const crown = soft(new THREE.IcosahedronGeometry(0.42, 1).scale(1, 0.85, 1).translate(0, 0.78, 0), 0, 0.78, 0);
-      const crown2 = soft(new THREE.IcosahedronGeometry(0.3, 0).translate(0.22, 0.6, 0.1), 0.22, 0.6, 0.1);
-      const colorize = (g: THREE.BufferGeometry, r: number, gr: number, b: number) => {
-        const pp = g.getAttribute('position');
-        const n = pp.count;
-        const a = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) {
-          // Krone unten dunkler (Eigenverschattung), oben heller, leichtes Rauschen pro Vertex
-          const k = r > 0.5 && gr > 0.5 ? 0.6 + 0.55 * Math.min(1, Math.max(0, (pp.getY(i) - 0.45) / 0.75)) + 0.06 * Math.sin(i * 12.9898) : 1;
-          a.set([r * k, gr * k, b * k], i * 3);
-        }
-        g.setAttribute('color', new THREE.BufferAttribute(a, 3));
-        return g;
-      };
-      return mergeGeometries([colorize(trunk, 0.32, 0.22, 0.14).toNonIndexed(), colorize(crown, 1, 1, 1).toNonIndexed(), colorize(crown2, 0.9, 1, 0.85).toNonIndexed()])!;
+      const parts: THREE.BufferGeometry[] = [withUv(trunkGeo(0.78, 0.075, 0.04))];
+      const cn: [number, number, number] = [0, 0.98, 0];
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2 + (k % 2) * 0.3;
+        parts.push(quad(0.95, 0.85, Math.cos(a) * 0.1, 1.0, Math.sin(a) * 0.1, a, -0.28, 0.8, 1.25, cn).toNonIndexed());
+      }
+      for (let k = 0; k < 3; k++) parts.push(quad(0.85, 0.85, 0, 0.78 + k * 0.2, 0, k * 1.1, -Math.PI / 2 + 0.05, 0.9, 1.25, cn).toNonIndexed());
+      return mergeGeometries(parts.map((g) => withUv(g)))!;
     };
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const conBuild = (): THREE.BufferGeometry => {
+      const parts: THREE.BufferGeometry[] = [withUv(trunkGeo(0.4, 0.05, 0.035))];
+      const tiers: Array<[number, number, number]> = [
+        [0.3, 0.4, 0.36],
+        [0.5, 0.33, 0.3],
+        [0.72, 0.26, 0.24],
+        [0.94, 0.18, 0.2],
+        [1.12, 0.1, 0.14],
+      ];
+      for (const [y, r, h] of tiers) {
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2 + y;
+          parts.push(quad(r * 1.35, h * 1.7, Math.cos(a) * r * 0.45, y + h * 0.3, Math.sin(a) * r * 0.45, -a + Math.PI / 2, -0.55, 0.78, 1.25, null).toNonIndexed());
+        }
+      }
+      return mergeGeometries(parts.map((g) => withUv(g)))!;
+    };
+    const lt = leafTex(false);
+    const nt = leafTex(true);
+    // Eigenleuchten (Emission aus der Textur) hellt die Eigenverschattung der Kugelnormalen auf
+    const leafMat = new THREE.MeshLambertMaterial({ map: lt, emissiveMap: lt, emissive: 0xffffff, emissiveIntensity: 0.38, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
+    const needleMat = new THREE.MeshLambertMaterial({ map: nt, emissiveMap: nt, emissive: 0xffffff, emissiveIntensity: 0.38, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
     type Tree = { x: number; y: number; h: number; tint: number; con: boolean };
     const trees: Tree[] = [];
     const gs = 13;
@@ -995,7 +1065,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const col = new THREE.Color();
     const mk = (geo: THREE.BufferGeometry, arr: Tree[], wide: number) => {
       if (!arr.length) return;
-      const im = new THREE.InstancedMesh(geo, mat, arr.length);
+      const im = new THREE.InstancedMesh(geo, geo === coneGeo ? needleMat : leafMat, arr.length);
       arr.forEach((tr, k) => {
         e.set(0, rnd() * 6.283, 0);
         q.setFromEuler(e);
@@ -1004,14 +1074,18 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
         scl.set(tr.h * wide, tr.h, tr.h * wide);
         m4.compose(pos, q, scl);
         im.setMatrixAt(k, m4);
-        col.setRGB(th.foliage[0] * tr.tint * 1.5, th.foliage[1] * tr.tint * 1.5, th.foliage[2] * tr.tint * 1.5);
+        {
+          const fm = Math.max(th.foliage[0], th.foliage[1], th.foliage[2]);
+          col.setRGB((0.55 + 0.45 * (th.foliage[0] / fm)) * tr.tint * 1.12, (0.55 + 0.45 * (th.foliage[1] / fm)) * tr.tint * 1.12, (0.55 + 0.45 * (th.foliage[2] / fm)) * tr.tint * 1.12);
+        }
         im.setColorAt(k, col);
       });
       im.frustumCulled = false;
       scene.add(im);
       treeMeshes.push({ im, total: arr.length });
     };
-    mk(conBuild(), cons, 0.55);
+    const coneGeo = conBuild();
+    mk(coneGeo, cons, 0.55);
     mk(leafBuild(), leaf, 0.75);
   }
 

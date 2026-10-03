@@ -38,7 +38,7 @@ function noiseTexture(base: [number, number, number], amp: number, speck: Array<
 
 /** Asphalt mit Zuschlagkörnern, Teernähten, Rissen und Flecken (kachelbar, 8 m pro Kachel). */
 function asphaltTexture(): THREE.CanvasTexture {
-  const t = noiseTexture([62, 64, 68], 40, [[170, 170, 172], [18, 18, 20], [205, 205, 205], [95, 92, 88]], 1234, 1024);
+  const t = noiseTexture([86, 89, 98], 40, [[170, 170, 172], [18, 18, 20], [205, 205, 205], [95, 92, 88]], 1234, 1024);
   const c = t.image as HTMLCanvasElement;
   const g = c.getContext('2d')!;
   const r = rng(4242);
@@ -274,31 +274,38 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
     scene.add(mesh);
   }
   if (armco.length) {
-    const rail = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.34, 0.1), new THREE.MeshStandardMaterial({ color: 0xbfc3c6, metalness: 0.6, roughness: 0.4 }), armco.length);
-    const postGeo = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+    // Leitplanke im Stil der Vorlage: schwarzer Drei-Holm-Zaun mit kräftigen Pfosten
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x0f1012, roughness: 0.55, metalness: 0.25 });
+    const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.17, 0.07), railMat, armco.length * 3);
+    const postGeo = new THREE.BoxGeometry(0.2, 1.15, 0.2);
     let posts = 0;
-    for (const w of armco) posts += Math.max(1, Math.round(Math.hypot(w.bx - w.ax, w.by - w.ay) / 2)) + 1;
-    const postMesh = new THREE.InstancedMesh(postGeo, new THREE.MeshStandardMaterial({ color: 0x55595c, metalness: 0.5, roughness: 0.6 }), posts);
+    for (const w of armco) posts += Math.max(1, Math.round(Math.hypot(w.bx - w.ax, w.by - w.ay) / 3)) + 1;
+    const postMesh = new THREE.InstancedMesh(postGeo, railMat, posts);
+    rails.castShadow = true;
+    postMesh.castShadow = true;
     let pk = 0;
     armco.forEach((w, i) => {
       const len = Math.hypot(w.bx - w.ax, w.by - w.ay);
       const ang = Math.atan2(w.by - w.ay, w.bx - w.ax);
-      pos.set((w.ax + w.bx) / 2 - w.nx * 0.08, 0.6 + heightAt(w.ax, w.ay), -((w.ay + w.by) / 2 - w.ny * 0.08));
+      const hh = heightAt(w.ax, w.ay);
       q.setFromAxisAngle(up, ang);
       scl.set(len, 1, 1);
-      m4.compose(pos, q, scl);
-      rail.setMatrixAt(i, m4);
-      const n = Math.max(1, Math.round(len / 2));
+      for (let r = 0; r < 3; r++) {
+        pos.set((w.ax + w.bx) / 2 - w.nx * 0.07, 0.34 + r * 0.3 + hh, -((w.ay + w.by) / 2 - w.ny * 0.07));
+        m4.compose(pos, q, scl);
+        rails.setMatrixAt(i * 3 + r, m4);
+      }
+      const n = Math.max(1, Math.round(len / 3));
+      q.identity();
+      scl.set(1, 1, 1);
       for (let j = 0; j <= n; j++) {
         const t = (j / n) * len;
-        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.16, 0.4 + heightAt(w.ax, w.ay), -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.16));
-        q.identity();
-        scl.set(1, 1, 1);
+        pos.set(w.ax + ((w.bx - w.ax) / len) * t - w.nx * 0.2, 0.55 + hh, -(w.ay + ((w.by - w.ay) / len) * t - w.ny * 0.2));
         m4.compose(pos, q, scl);
         postMesh.setMatrixAt(pk++, m4);
       }
     });
-    scene.add(rail, postMesh);
+    scene.add(rails, postMesh);
   }
 
 }
