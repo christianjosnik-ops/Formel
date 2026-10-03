@@ -36,7 +36,7 @@ export function loadSceneryAssets(): Promise<SceneryAssets | null> {
       const convert = (m: THREE.MeshStandardMaterial): THREE.Material => {
         let r = swap.get(m);
         if (r) return r;
-        if (/Leaf|Needle|Crowd|Grass|Bush/i.test(m.name)) {
+        if (/Leaf|Needle|Crowd|Grass|Bush|Light/i.test(m.name)) {
           r = new THREE.MeshBasicMaterial({
             map: m.map,
             vertexColors: true,

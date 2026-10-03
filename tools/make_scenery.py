@@ -928,6 +928,124 @@ def grandstand_module(name, L=12.0):
     return b.finish()
 
 
+
+# ----------------------------------------------------------------------------------------------
+# Boxengarage (offene Bucht vor der Fassade) mit Boxencrew, Reifenstapeln, Werkzeug und Beleuchtung
+# ----------------------------------------------------------------------------------------------
+
+M_VC = mat_color('VColor', (1, 1, 1), rough=0.8, vc=True)
+M_ACCENT = mat_color('Accent', (1, 1, 1), rough=0.55, vc=True)
+M_LIGHT = mat_color('Light', (1, 1, 1), rough=0.4)
+
+
+def cyl(b, cx, cy, z0, z1, r, mat, color=(1, 1, 1), seg=12, axis='z'):
+    """Zylinder (Achse z, x oder y) mit Kappen."""
+    bm = b.bm
+    mi = b.mat_index(mat)
+    uv = bm.loops.layers.uv.verify()
+    col = bm.loops.layers.color.get('Col') or bm.loops.layers.color.new('Col')
+    ring0, ring1 = [], []
+    for k in range(seg):
+        a = k / seg * math.tau
+        u, v = math.cos(a) * r, math.sin(a) * r
+        if axis == 'z':
+            p0, p1 = (cx + u, cy + v, z0), (cx + u, cy + v, z1)
+        elif axis == 'x':
+            p0, p1 = (z0, cx + u, cy + v), (z1, cx + u, cy + v)
+        else:
+            p0, p1 = (cx + u, z0, cy + v), (cx + u, z1, cy + v)
+        ring0.append(bm.verts.new(p0))
+        ring1.append(bm.verts.new(p1))
+    faces = []
+    for k in range(seg):
+        j = (k + 1) % seg
+        faces.append(bm.faces.new([ring0[k], ring0[j], ring1[j], ring1[k]]))
+    faces.append(bm.faces.new(ring0[::-1]))
+    faces.append(bm.faces.new(ring1))
+    # nach außen orientieren
+    cen = Vector((0, 0, 0))
+    for v in ring0 + ring1:
+        cen += v.co
+    cen /= len(ring0) * 2
+    for f in faces:
+        f.material_index = mi
+        f.normal_update()
+        if f.normal.dot(f.calc_center_median() - cen) < 0:
+            f.normal_flip()
+        for li in f.loops:
+            li[col] = (*color, 1)
+            li[uv].uv = (0, 0)
+
+
+def person(b, x, y, yaw, overall, helmet=(0.95, 0.95, 0.95), skin=(0.82, 0.62, 0.5), h=1.8):
+    """Stehende Boxencrew-Figur (Quader/Zylinder), blickt entlang yaw."""
+    c, s_ = math.cos(yaw), math.sin(yaw)
+
+    def pt(dx, dy):
+        return x + dx * c - dy * s_, y + dx * s_ + dy * c
+    # Beine
+    for sx in (-0.1, 0.1):
+        px, py = pt(sx, 0)
+        cyl(b, px, py, 0, h * 0.48, 0.075, M_VC, (0.08, 0.08, 0.1), 6)
+    # Oberkörper
+    px, py = pt(0, 0)
+    cyl(b, px, py, h * 0.46, h * 0.83, 0.2, M_ACCENT, overall, 8)
+    # Arme
+    for sx in (-0.26, 0.26):
+        ax, ay = pt(sx, 0.02)
+        cyl(b, ax, ay, h * 0.5, h * 0.8, 0.055, M_ACCENT, overall, 6)
+    # Kopf und Helm
+    cyl(b, px, py, h * 0.84, h * 0.93, 0.095, M_VC, skin, 8)
+    cyl(b, px, py, h * 0.9, h * 1.0, 0.12, M_VC, helmet, 8)
+
+
+def garage_bay(name, L=10.4, D=3.6, Hh=5.0):
+    b = Builder(name)
+    for m in (M_CONC, M_STEEL, M_ROOF, M_WALL, M_DARK, M_ACCENT, M_LIGHT, M_VC):
+        b.mat_index(m)
+    # Boden (Teamfarbe, dunkel) und Fugen
+    box2(b, 0, 0, 0, L, D, 0.04, M_ACCENT, (0.55, 0.55, 0.55))
+    box2(b, 0.2, 0.2, 0.04, L - 0.2, 0.32, 0.05, M_VC, (0.9, 0.9, 0.9))  # Schwellenmarkierung vorne
+    # Seitenwände (Trennwände zur Nachbarbucht)
+    box2(b, -0.06, 0, 0, 0.06, D, Hh, M_ROOF, (1, 1, 1))
+    box2(b, L - 0.06, 0, 0, L + 0.06, D, Hh, M_ROOF, (1, 1, 1))
+    # Decke mit Leuchtbändern
+    box2(b, 0, 0, Hh, L, D, Hh + 0.14, M_ROOF)
+    for k in range(4):
+        x = 0.9 + k * (L - 1.8) / 3
+        box2(b, x - 0.55, 0.5, Hh - 0.04, x + 0.55, D - 0.5, Hh, M_LIGHT)
+    # Rückwand: unten Teamfarbe, oben hell, Bildschirme
+    box2(b, 0.06, D - 0.12, 0, L - 0.06, D, 1.35, M_ACCENT, (0.8, 0.8, 0.8))
+    box2(b, 0.06, D - 0.12, 1.35, L - 0.06, D, Hh, M_ROOF)
+    for sx in (2.2, 5.2, 8.2):
+        box2(b, sx - 0.7, D - 0.2, 2.5, sx + 0.7, D - 0.12, 3.3, M_DARK)
+        box2(b, sx - 0.64, D - 0.21, 2.56, sx + 0.64, D - 0.19, 3.24, M_LIGHT, (0.5, 0.75, 1.0))
+    # Kopfbalken mit Teamfarbe, Rolltor-Trommel und halb heruntergelassenes Tor
+    box2(b, 0, -0.08, Hh - 0.55, L, 0.06, Hh + 0.14, M_ACCENT)
+    cyl(b, 0.38, Hh - 0.7, 0.1, L - 0.1, 0.2, M_STEEL, (0.8, 0.82, 0.85), 10, axis='x')
+    for k in range(5):
+        box2(b, 0.1, 0.25, Hh - 1.0 - k * 0.16, L - 0.1, 0.3, Hh - 0.88 - k * 0.16, M_STEEL, (0.7, 0.72, 0.75))
+    # Reifenstapel und Radmuttern-Werkzeug
+    for (tx, ty) in ((1.0, D - 0.9), (1.9, D - 0.8), (L - 1.0, D - 0.9), (L - 1.9, D - 0.7)):
+        for k in range(4):
+            cyl(b, tx, ty, 0.04 + k * 0.31, 0.04 + k * 0.31 + 0.3, 0.36, M_VC, (0.05, 0.05, 0.06), 12)
+            cyl(b, tx, ty, 0.04 + k * 0.31 + 0.02, 0.04 + k * 0.31 + 0.28, 0.2, M_VC, (0.55, 0.57, 0.6), 10)
+    # Werkzeugwagen und Regal
+    box2(b, 4.0, D - 1.0, 0.1, 5.1, D - 0.35, 0.95, M_ACCENT, (0.9, 0.9, 0.9))
+    box2(b, 4.0, D - 1.0, 0.95, 5.1, D - 0.35, 1.02, M_STEEL)
+    for k in range(4):
+        box2(b, 6.0, D - 0.5, 0.3 + k * 0.5, 7.4, D - 0.15, 0.34 + k * 0.5, M_STEEL)
+    for k in range(6):
+        box2(b, 6.1 + k * 0.22, D - 0.45, 0.34, 6.2 + k * 0.22, D - 0.2, 0.7, M_DARK)
+    # Crew
+    cr = random.Random(77)
+    xs = [2.7, 3.4, 4.1, 6.3, 7.0, 7.7]
+    for k, x in enumerate(xs):
+        person(b, x, 1.05 + cr.random() * 0.8, math.pi * 1.5 + cr.uniform(-0.4, 0.4), (0.95, 0.95, 0.95) if k % 3 else (0.9, 0.9, 0.9), h=1.72 + cr.random() * 0.14)
+    proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0, M_WALL: 4.0})
+    return b.finish()
+
+
 # ----------------------------------------------------------------------------------------------
 # Szene bauen und exportieren
 # ----------------------------------------------------------------------------------------------
@@ -949,6 +1067,7 @@ objs.append(grass_tuft('grass_dry_2', 14, True, 9))
 objs.append(bush('bush_1', 21))
 objs.append(bush('bush_2', 22))
 objs.append(grandstand_module('grandstand_module', 12.0))
+objs.append(garage_bay('garage_bay'))
 
 # Material-Einstellungen für glTF: Blattkarten als Alpha-Clip
 for m in (M_LEAF, M_NEEDLE, M_CROWD):
