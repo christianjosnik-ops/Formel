@@ -23,6 +23,7 @@ import { createScene } from './render/scene';
 import { DebrisRenderer, Effects } from './render/effects';
 import { buildWorldVisuals } from './render/worldVisuals';
 import { buildTrackVisuals } from './render/trackVisuals';
+import { PitCrewRenderer } from './render/pitCrew';
 import { loadSceneryAssets } from './render/sceneryAssets';
 import { createMap } from './world/maps';
 import { LapTimer } from './ui/lap';
@@ -49,6 +50,7 @@ if (gameMap.track) {
   camera.updateProjectionMatrix();
 }
 const effects = new Effects(scene, worldMap);
+const pitCrew = new PitCrewRenderer(scene);
 let debris: DebrisRenderer | null = null;
 const lapTimer = new LapTimer(gameMap.track);
 
@@ -95,6 +97,7 @@ buildCar();
 rig.setMode('showroom', car);
 document.body.classList.add('showroom');
 const raceHud = new RaceHud();
+raceHud.pitAuto = settings.pitAuto;
 
 // ---------------------------------------------------------------- KI-Autos
 const aiModels: (CarModel | undefined)[] = [];
@@ -149,6 +152,50 @@ function updateAi(dt: number, s: Float64Array): void {
   }
 }
 
+
+/** Boxenstopp-Animation: Crew, Wagenheber und Radwechsel für alle Autos in der Nähe. */
+function updatePitCrew(s: Float64Array): void {
+  const list: Array<{ k: number; view: Float64Array; model: CarModel; ground: number }> = [];
+  const trk = gameMap.track;
+  const gy = (x: number, y: number) => (trk ? trk.heightAt(x, y) : 0);
+  list.push({ k: 0, view: s, model: car, ground: gy(s[S.x], s[S.y]) });
+  const n = physics.carCount;
+  for (let k = 1; k < n; k++) {
+    const v = physics.carView(k);
+    const m = aiModels[k];
+    if (v && m && m.root.visible) list.push({ k, view: v, model: m, ground: gy(v[S.x], v[S.y]) });
+  }
+  pitCrew.update(list, camera.position.x, camera.position.z);
+}
+
+/** Boxenstopp-Kamera: sanft zu einer Nahansicht des Autos vor der Box überblenden, solange der Reifenwechsel läuft. */
+let pitCamBlend = 0;
+const pitCamQuat = new THREE.Quaternion();
+const pitCamTmp = new THREE.Object3D();
+function updatePitCam(s: Float64Array, dt: number): void {
+  const active = (s[S.pitState] === 3 || pitCrew.demo >= 0) && rig.mode !== 'cockpit' && rig.mode !== 'showroom' && !debugCam;
+  pitCamBlend += ((active ? 1 : 0) - pitCamBlend) * Math.min(1, dt * 3.5);
+  if (pitCamBlend < 0.01) return;
+  const psi = s[S.psi];
+  const cx = s[S.x];
+  const cy = s[S.y];
+  const fx = Math.cos(psi);
+  const fy = Math.sin(psi);
+  const rx = Math.sin(psi);
+  const ry = -Math.cos(psi);
+  // vorn-rechts, tief, mit Blick auf die Radmitte
+  const lx = 5.0;
+  const lz = 3.4;
+  const g = gameMap.track ? gameMap.track.heightAt(cx, cy) : 0;
+  const target = new THREE.Vector3(cx + fx * lx + rx * lz, g + 1.25, -(cy + fy * lx + ry * lz));
+  pitCamTmp.position.copy(target);
+  pitCamTmp.lookAt(cx + fx * 0.2, g + 0.6, -cy - fy * 0.2);
+  pitCamQuat.copy(pitCamTmp.quaternion);
+  const k = pitCamBlend * pitCamBlend * (3 - 2 * pitCamBlend);
+  camera.position.lerp(target, k);
+  camera.quaternion.slerp(pitCamQuat, k);
+}
+
 function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
   return {
     laps: settings.laps,
@@ -158,6 +205,7 @@ function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
     grid: settings.grid,
     seed: (Date.now() & 0xffff) + 1,
     wearScale: settings.wear,
+    pitAssist: settings.pitAuto,
     startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
     ...over,
   };
@@ -195,6 +243,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   clearAi();
   physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
   physics.setBrakeBias(settings.brakeBias);
+  raceHud.pitAuto = settings.pitAuto;
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
   document.body.classList.toggle('race', race);
   if (race) {
@@ -449,8 +498,10 @@ function frame(now: number): void {
     if (debris) debris.groundY = ground;
     car.update(s, dt, ground, tilt);
     updateAi(dt, s);
+    updatePitCrew(s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);
+    updatePitCam(s, dt);
     if (debugCam) {
       camera.position.set(debugCam.x, debugCam.y, debugCam.z);
       camera.lookAt(debugCam.lx, debugCam.ly, debugCam.lz);
@@ -540,7 +591,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

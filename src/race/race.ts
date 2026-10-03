@@ -27,6 +27,8 @@ export interface RaceConfig {
   autopilot?: boolean;
   /** Verschleißfaktor (0 = aus, 1 = normal, 2 = hoch). */
   wearScale?: number;
+  /** Boxen-Automatik für den Spieler (Einfahrt, Halt, Ausfahrt per KI-Steuerung). */
+  pitAssist?: boolean;
   /** Startreifen des Spielers. */
   startCompound?: CompoundId;
   /** Upgrades des Spielers (Stufen 0..5). */
@@ -108,6 +110,8 @@ export class RaceDirector {
   readonly entrants: Entrant[] = [];
   readonly track: Track;
   readonly line: RacingLine;
+  /** Steuerung des Spielerautos in der Boxengasse (Boxen-Automatik). */
+  private readonly pitDriver: AIDriver;
   state: RaceState = 'grid';
   time = 0; // seit Rennstart (Lichter aus), negativ davor
   lights = 0;
@@ -127,6 +131,7 @@ export class RaceDirector {
   ) {
     this.track = map.track!;
     this.line = lineCache ?? new RacingLine(this.track);
+    this.pitDriver = new AIDriver(this.line, { pace: 1, consistency: 1, racecraft: 0, seed: 99 });
     this.rnd = lcg(cfg.seed);
     this.cpCount = Math.ceil(this.track.length / CP_LEN) + 2;
     const ids = selectField(cfg);
@@ -485,7 +490,7 @@ export class RaceDirector {
   /** Boxengasse für KI: Einfahrt, Anfahrt zur Box, Reifenwechsel, Ausfahrt. true = Auto wird hier gesteuert. */
   private pitAI(e: Entrant, v: Vehicle, dt: number): boolean {
     const t = this.track;
-    const ai = e.ai!;
+    const ai = e.ai ?? this.pitDriver;
     const rel = this.rel(e.idx);
     const speed = Math.hypot(v.u, v.v);
     const box = t.pit.boxes[e.driver % t.pit.boxes.length];
@@ -494,7 +499,7 @@ export class RaceDirector {
       let wmax = 0;
       for (let i = 0; i < 4; i++) wmax = Math.max(wmax, v.tyreWear[i]);
       const remaining = this.cfg.laps - e.dist / t.length;
-      if (this.cfg.laps >= 2 && e.pitStops < 3 && wmax > e.pitThr && remaining > 1.4 && !e.finished && !v.retired) {
+      if (!e.isPlayer && this.cfg.laps >= 2 && e.pitStops < 3 && wmax > e.pitThr && remaining > 1.4 && !e.finished && !v.retired) {
         e.pit = 1;
         e.nextCompound = this.pickCompound(e);
       }
@@ -535,6 +540,7 @@ export class RaceDirector {
       if (e.pitTimer <= 0) {
         v.fitTyres(e.nextCompound);
         e.pitStops++;
+        e.pitReq = false;
         e.pit = 4;
       }
       return true;
@@ -554,6 +560,12 @@ export class RaceDirector {
 
   /** Boxengasse für den Spieler: Begrenzer, Reifenwechsel an der eigenen Box. */
   private pitPlayer(e: Entrant, v: Vehicle, dt: number): void {
+    if (this.cfg.pitAssist !== false) {
+      // Automatik: Einfahrt, Halt in der eigenen Box, Reifenwechsel und Ausfahrt übernimmt die Boxen-KI
+      e.limiter = false;
+      this.pitAI(e, v, dt);
+      return;
+    }
     const t = this.track;
     const rel = this.rel(e.idx);
     const lat = t.lateral(e.idx, v.x, v.y);
@@ -702,5 +714,6 @@ export class RaceDirector {
     out[base + S.pitBoxS] = this.track.pit.boxes[e.driver % this.track.pit.boxes.length].s;
     out[base + S.pitLimiter] = e.limiter ? 1 : 0;
     out[base + S.pitNext] = COMPOUND_ORDER.indexOf(e.nextCompound);
+    out[base + S.pitSvc] = e.pitSvc;
   }
 }

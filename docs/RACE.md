@@ -36,3 +36,8 @@ Jede KI bekommt von `RaceDirector.neighbours` eine Liste aller Autos im Bereich 
 ## Fahrgefühl (v2)
 
 Mit Fahrhilfe (Stufe 1/2) entspricht voller Lenkeinschlag der Grip-Grenze des Autos (`Vehicle.maxSteerAt`/`gripLimit`), die Assist-Gierrate wird auf den Grip begrenzt. Beschleunigung: 0–100 km/h ≈ 2,4 s, 0–200 ≈ 5,3 s, 0–300 ≈ 11 s (Start-Kennfeld begrenzt das Moment bei niedrigem Tempo, MGU-K-Abregelung ab 280 km/h).
+
+## Boxenstopp (Automatik und Animation)
+
+- **Boxen-Automatik** (Einstellung "Boxenstopp", Standard an): Ein Druck auf BOX (Taste P) genügt. Hinter der Boxeneinfahrt übernimmt die Boxen-KI (`RaceDirector.pitAI` mit `pitDriver`) das Auto: Einfahrt mit 80 km/h, Halt in der eigenen Box, Reifenwechsel, Ausfahrt. Danach hat der Spieler wieder die Kontrolle. "Manuell" fährt wie bisher selbst. Bei verschlissenen Reifen (>72 %) blinkt ein Hinweis.
+- **Animation** (`src/render/pitCrew.ts`): Zwölf Crewmitglieder laufen aus der Garage, Wagenheber heben das Auto an (`CarModel.serviceLift`), die Räder werden ausgebaut (`serviceHide`), neue Reifen mit der gewählten Mischung eingesetzt, das Auto abgelassen und per Lollipop (rot → grün) freigegeben. Der Fortschritt kommt aus `pitTimer/pitSvc` im Snapshot. Beim Spieler blendet eine Boxen-Kamera zur Nahansicht über.

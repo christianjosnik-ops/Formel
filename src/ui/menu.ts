@@ -42,6 +42,7 @@ export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHoo
   });
   bindSelect('selTc', () => String(settings.tc), (v) => (settings.tc = Number(v)));
   bindSelect('selAbs', () => String(settings.abs), (v) => (settings.abs = Number(v)));
+  bindSelect('selPit', () => (settings.pitAuto ? '1' : '0'), (v) => (settings.pitAuto = v === '1'));
   bindSelect('selSteer', () => String(settings.steerAssist), (v) => (settings.steerAssist = Number(v)));
   bindSelect('selCompound', () => settings.compound, (v) => {
     settings.compound = v as Settings['compound'];

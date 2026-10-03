@@ -22,6 +22,8 @@ export interface Settings {
   driver: number;
   field: number;
   autoAero: boolean;
+  /** Boxen-Automatik: Auto fährt Einfahrt, Halt und Ausfahrt selbst. */
+  pitAuto: boolean;
   trackLimits: boolean;
   /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
   wear: number;
@@ -53,6 +55,7 @@ export const DEFAULTS: Settings = {
   driver: 0,
   field: 22,
   autoAero: true,
+  pitAuto: true,
   trackLimits: false,
   wear: 1,
   volume: 0.8,

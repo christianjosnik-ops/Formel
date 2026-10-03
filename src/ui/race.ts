@@ -33,6 +33,8 @@ export class RaceHud {
   onFinish: (pos: number, n: number, dnf: boolean) => string = () => '';
   private physics: PhysicsClient | null = null;
   prizeText = '';
+  /** Boxen-Automatik aktiv (aus den Einstellungen). */
+  pitAuto = true;
   private want = false;
   private wantAt = 0;
   private cmp: CompoundId = 'medium';
@@ -167,13 +169,24 @@ export class RaceHud {
     const next = COMPOUND_ORDER[me[S.pitNext] | 0] ?? this.cmp;
     document.querySelectorAll<HTMLButtonElement>('#cmpSel button').forEach((b) => b.classList.toggle('on', b.dataset.c === (this.want ? this.cmp : next)));
     const msg = $('pitMsg');
-    if (st === 1) msg.textContent = 'BOX BOX – Einfahrt links vor der Start/Ziel-Geraden';
-    else if (st === 3) msg.textContent = `REIFENWECHSEL ${me[S.pitTimer].toFixed(1)} s`;
-    else if (st === 4 && this.stopsSeen !== me[S.pitStops]) {
+    let wmax = 0;
+    for (let i = 0; i < 4; i++) wmax = Math.max(wmax, me[S.tyreWear + i]);
+    const nextName = (COMPOUND_ORDER[me[S.pitNext] | 0] ?? this.cmp).toUpperCase();
+    if (st === 1) msg.textContent = this.pitAuto ? 'BOX BOX – die Automatik übernimmt an der Boxeneinfahrt' : 'BOX BOX – Einfahrt links vor der Start/Ziel-Geraden';
+    else if (st === 2) msg.textContent = 'BOXENEINFAHRT – Automatik fährt in deine Box';
+    else if (st === 3) msg.textContent = `REIFENWECHSEL ${me[S.pitTimer].toFixed(1)} s · ${nextName}`;
+    else if (st === 4 && this.pitAuto) {
+      if (this.stopsSeen !== me[S.pitStops]) {
+        this.stopsSeen = me[S.pitStops];
+        this.say('LOS!', 1.5);
+      }
+      msg.textContent = 'BOXENAUSFAHRT – Automatik';
+    } else if (st === 4 && this.stopsSeen !== me[S.pitStops]) {
       this.stopsSeen = me[S.pitStops];
       this.say('LOS!', 1.5);
       msg.textContent = '';
     } else if (me[S.pitLimiter] > 0.5) msg.textContent = 'BOXENGASSE 80 km/h – halte in deiner Box';
+    else if (st === 0 && wmax > 0.72 && Math.floor(performance.now() / 600) % 2 === 0) msg.textContent = 'REIFEN ABGENUTZT – BOX drücken (Taste P)';
     else msg.textContent = '';
     if (st === 1) this.want = true;
     else if (this.want && performance.now() - this.wantAt > 600) this.want = false;

@@ -99,6 +99,7 @@ export const S = {
   pitBoxS: one(), // Position der eigenen Box [m relativ zur Startlinie]
   pitLimiter: one(), // 1 = Geschwindigkeitsbegrenzer aktiv
   pitNext: one(), // gewählte Mischung (Index)
+  pitSvc: one(), // gesamte Standzeit des Boxenstopps [s]
   wallContact: one(), // Anzahl Kontaktpunkte mit Wand/Fremdkörpern
   contacts: 0, // Anfang des Kontaktfeldes (MAX_CONTACTS * CONTACT_STRIDE)
   dents: 0, // Anfang des Dellenfeldes (MAX_DENTS * DENT_STRIDE)
