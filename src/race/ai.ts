@@ -102,7 +102,7 @@ export class AIDriver {
     const t = line.track;
     const n = line.n;
     const inp = v.input;
-    inp.tc = 2;
+    inp.tc = 1;
     inp.abs = 1;
     inp.steerAssist = 0;
 
@@ -247,7 +247,7 @@ export class AIDriver {
     const t = this.line.track;
     const n = t.n;
     const inp = v.input;
-    inp.tc = 2;
+    inp.tc = 1;
     inp.abs = 1;
     inp.steerAssist = 0;
     inp.aeroX = 0;

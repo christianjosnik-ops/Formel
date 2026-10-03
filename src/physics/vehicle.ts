@@ -108,6 +108,10 @@ export class Vehicle {
   /** Geländegradient (Steigung in Weltrichtung), vom World-Modul gesetzt. */
   slopeX = 0;
   slopeY = 0;
+  /** Zusätzliche Bodenreibung eines havarierten Autos (Unterboden/Felgen schleifen) [m/s^2]. */
+  wreckDrag = 0;
+  /** Eingriffsstärke des Schleuderschutzes 0..1 (für Gas-Rücknahme). */
+  espBeta = 0;
   /** Teamleistung (Ratings wirken nur über physikalische Parameter). */
   teamPower = 1;
   teamAero = 1;
@@ -256,7 +260,7 @@ export class Vehicle {
 
   /** Geschwindigkeitsabhängiger maximaler Radlenkwinkel [rad] (Eingabe-Skalierung). */
   maxSteerAt(speed: number, level: number): number {
-    const v0 = level === 0 ? 46 : level === 1 ? 32 : 24;
+    const v0 = level === 0 ? 46 : level === 1 ? 26 : 20;
     return this.cfg.geometry.maxSteer / (1 + (speed * speed) / (v0 * v0));
   }
 
@@ -291,19 +295,26 @@ export class Vehicle {
       thr = this.thrFilt;
     }
 
-    // Traktionskontrolle auf Basis des Antriebsschlupfs der Hinterräder
+    // Traktionskontrolle auf Basis des Antriebsschlupfs und der Quergleitwinkel der Hinterräder.
+    // Stufe 0 ("Aus") behält einen groben Grundschutz, damit ein 100-%-Gaspedal nicht sofort das Heck abwirft.
     {
-      const thrK = inp.tc === 1 ? 0.17 : 0.11;
+      const lvl = inp.tc;
+      const thrK = lvl === 0 ? 0.24 : lvl === 1 ? 0.11 : 0.08;
+      const gainK = lvl === 0 ? 5 : lvl === 1 ? 10 : 14;
       const slip = Math.max(this.kappa[2], this.kappa[3]);
+      // seitlicher Gleitwinkel hinten: wer quer rutscht, bekommt weniger Antriebsmoment
+      const aRear = Math.max(Math.abs(this.alpha[2]), Math.abs(this.alpha[3]));
+      const aThr = lvl === 0 ? 0.16 : lvl === 1 ? 0.1 : 0.085;
       let target = 1;
-      if (inp.tc > 0 && slip > thrK && speed > 2) {
-        target = 1 - (slip - thrK) * 9;
-        if (target < 0.05) target = 0.05;
-      }
+      if (slip > thrK && speed > 2) target = 1 - (slip - thrK) * gainK;
+      if (aRear > aThr && speed > 6) target = Math.min(target, 1 - (aRear - aThr) * (lvl === 0 ? 4 : 9));
+      if (target < 0.05) target = 0.05;
       const k = target < this.tcFactor ? 60 : 12;
       this.tcFactor += (target - this.tcFactor) * Math.min(1, dt * k);
       this.tcActive = this.tcFactor < 0.97 ? 1 : 0;
       thr *= this.tcFactor;
+      // Schleuderschutz nimmt Gas zurück, solange das Heck weit ausbricht
+      if (inp.steerAssist > 0 && this.espBeta > 0) thr *= 1 - 0.8 * this.espBeta;
     }
     // ABS je Achse
     {
@@ -330,11 +341,18 @@ export class Vehicle {
       let target = cmd * this.maxSteerAt(speed, inp.steerAssist);
       if (inp.steerAssist > 0 && speed > 8) {
         const rDes = (speed * Math.tan(target)) / this.L;
-        const gain = inp.steerAssist === 1 ? 0.35 : 0.8;
+        const gain = inp.steerAssist === 1 ? 0.6 : 1.1;
         let corr = gain * (rDes - this.r) * (this.L / speed);
-        if (corr > 0.06) corr = 0.06;
-        else if (corr < -0.06) corr = -0.06;
+        // Schleuderschutz (ESP-artig): Gegenlenken in Richtung der Rutschbewegung, sobald der Schwimmwinkel wächst
+        const beta = Math.atan2(this.v, Math.max(this.u, 1));
+        const ab = Math.abs(beta);
+        const thrB = inp.steerAssist === 1 ? 0.07 : 0.045;
+        if (ab > thrB) corr += Math.sign(beta) * (ab - thrB) * (inp.steerAssist === 1 ? 1.4 : 2.2);
+        const lim = inp.steerAssist === 1 ? 0.14 : 0.2;
+        if (corr > lim) corr = lim;
+        else if (corr < -lim) corr = -lim;
         target += corr;
+        this.espBeta = ab > thrB ? Math.min(1, (ab - thrB) * 8) : 0;
       }
       const max = geo.maxSteer;
       if (target > max) target = max;
@@ -604,6 +622,15 @@ export class Vehicle {
       this.omega[i] = w1;
     }
 
+    // ---------------- Wrack: schleifender Unterboden/Felgen bremsen kräftig ----------------
+    if (this.wreckDrag > 0) {
+      const sp = Math.hypot(this.u, this.v);
+      if (sp > 0.3) {
+        const f = m * this.wreckDrag * Math.min(1, sp / 4);
+        fxBody -= (f * this.u) / sp;
+        fyBody -= (f * this.v) / sp;
+      }
+    }
     // ---------------- Hangabtrieb ----------------
     if (this.slopeX !== 0 || this.slopeY !== 0) {
       const cpS = Math.cos(this.psi);

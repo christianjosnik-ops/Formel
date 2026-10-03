@@ -88,7 +88,7 @@ describe('Längsdynamik', () => {
     expect(fuel0 - car.fuel).toBeLessThan(1);
   });
 
-  it('Traktionskontrolle: mehr Vortrieb als Durchdrehen ohne Hilfe, mittlerer Schlupf sinkt', () => {
+  it('Traktionskontrolle: starke Stufe hält den Schlupf unter dem Grundschutz', () => {
     const launch = (tc: number) => {
       const car = makeCar();
       car.input.tc = tc;
@@ -103,7 +103,8 @@ describe('Längsdynamik', () => {
     };
     const off = launch(0);
     const strong = launch(2);
-    expect(strong.v).toBeGreaterThan(off.v * 1.1);
+    // Stufe 0 hat nur noch groben Grundschutz: Stufe 2 greift früher ein (weniger Schlupf), ohne langsamer zu sein
+    expect(strong.v).toBeGreaterThan(off.v * 0.97);
     expect(strong.meanK).toBeLessThan(off.meanK);
   });
 

@@ -20,6 +20,7 @@ export class PhysicsClient {
   private offset = 0; // simTime - performance.now()/1000 (Schätzung, nimmt Minimum der Verzögerung)
   private haveOffset = false;
   private readonly delay = 0.022;
+  private scale = 1;
 
   private readonly views: Float64Array[] = [];
   private sa: Float64Array | null = null;
@@ -41,7 +42,7 @@ export class PhysicsClient {
           this.offset = this.haveOffset ? this.offset + (off - this.offset) * 0.1 : off;
           this.haveOffset = true;
         } else {
-          this.offset += (off - this.offset) * 0.002;
+          this.offset += (off - this.offset) * (this.scale < 1 ? 0.3 : 0.002);
         }
         this.ring.push(m.buf);
         this.ringRecv.push(now);
@@ -67,6 +68,10 @@ export class PhysicsClient {
   }
   restart(race?: RaceConfig, upgrades?: Upgrades): void {
     this.send({ type: 'restart', race, upgrades });
+  }
+  setTimeScale(scale: number): void {
+    this.scale = scale;
+    this.send({ type: 'timescale', scale });
   }
   pit(request: boolean, compound: CompoundId): void {
     this.send({ type: 'pit', request, compound });

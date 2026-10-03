@@ -122,6 +122,7 @@ export const BODY_WHEEL = 2;
 export const BODY_WING_F = 3;
 export const BODY_WING_R = 4;
 export const BODY_SHARD = 5;
+export const BODY_TYRE = 6; // Reifen aus Barrieren
 S.nBodies = next++;
 S.nCars = next++;
 S.contacts = next;

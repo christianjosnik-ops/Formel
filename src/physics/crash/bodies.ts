@@ -1,4 +1,4 @@
-import { BODY_CONE, BODY_SHARD, BODY_STRIDE, BODY_WHEEL, BODY_WING_F, BODY_WING_R, MAX_BODIES } from '../layout';
+import { BODY_CONE, BODY_SHARD, BODY_STRIDE, BODY_TYRE, BODY_WHEEL, BODY_WING_F, BODY_WING_R, MAX_BODIES } from '../layout';
 import type { ConeDef, WallDef } from '../../world/provingGround';
 import { WALLS } from '../../world/provingGround';
 
@@ -120,6 +120,8 @@ export class BodyPool {
         return 0.55 * G;
       case BODY_WHEEL:
         return 0.045 * G;
+      case BODY_TYRE:
+        return 0.14 * G;
       case BODY_WING_F:
       case BODY_WING_R:
         return 0.5 * G;
@@ -153,13 +155,13 @@ export class BodyPool {
         const k = sp > dec ? 1 - dec / sp : 0;
         this.vx[i] *= k;
         this.vy[i] *= k;
-        this.w[i] *= 1 - Math.min(1, dt * (kind === BODY_WHEEL ? 0.2 : 1.6));
+        this.w[i] *= 1 - Math.min(1, dt * (kind === BODY_WHEEL || kind === BODY_TYRE ? 0.25 : 1.6));
       }
       this.x[i] += this.vx[i] * dt;
       this.y[i] += this.vy[i] * dt;
       this.psi[i] += this.w[i] * dt;
       const spNow = Math.hypot(this.vx[i], this.vy[i]);
-      if (kind === BODY_WHEEL) {
+      if (kind === BODY_WHEEL || kind === BODY_TYRE) {
         // rollt: Drehung folgt der Bahngeschwindigkeit
         this.spin[i] += (spNow / Math.max(0.1, this.radius[i])) * dt;
         if (spNow > 0.3) this.psi[i] = Math.atan2(this.vy[i], this.vx[i]);
@@ -212,7 +214,7 @@ export class BodyPool {
       if (onGround && spNow < 0.06 && Math.abs(this.w[i]) < 0.1) {
         this.vx[i] = this.vy[i] = 0;
         this.w[i] = 0;
-        if (kind === BODY_CONE || kind === BODY_WHEEL) this.tilt[i] = Math.PI / 2;
+        if (kind === BODY_CONE || kind === BODY_WHEEL || kind === BODY_TYRE) this.tilt[i] = Math.PI / 2;
         this.asleep[i] = 1;
       }
     }
