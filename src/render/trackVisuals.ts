@@ -1,3 +1,4 @@
+import type { SceneryAssets } from './sceneryAssets';
 import * as THREE from 'three';
 import { DRIVERS, teamOf } from '../race/field';
 import { addTrackProps } from './trackProps';
@@ -320,7 +321,61 @@ function extrudeAlong(t: Track, s0: number, s1: number, side: 1 | -1, startOff: 
   return mesh;
 }
 
-function addGrandstand(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1): void {
+/** Tribüne aus dem Blender-Modul (Stufen, Sitzschalen, Publikum, Dach), entlang der Strecke gereiht. */
+function addGrandstandModules(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1, sc: SceneryAssets): void {
+  const parts = sc.parts('grandstand_module');
+  if (!parts.length) return;
+  const scale = 1.5;
+  const len = 8 * scale;
+  const count = Math.max(1, Math.floor((s1 - s0) / len));
+  const mats: THREE.Matrix4[] = [];
+  const basis = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const sca = new THREE.Vector3(scale, scale, scale);
+  const quat = new THREE.Quaternion();
+  for (let k = 0; k < count; k++) {
+    const sPos = s0 + k * len;
+    const i = (Math.round(sPos / t.ds) + t.n) % t.n;
+    const j = (Math.round((sPos + len) / t.ds) + t.n) % t.n;
+    const off = (side === 1 ? t.barrierL[i] : t.barrierR[i]) + 9;
+    const edge = side === 1 ? t.wl[i] : t.wr[i];
+    const o = edge + off;
+    const ax = t.x[i] + t.nx(i) * side * o;
+    const ay = t.y[i] + t.ny(i) * side * o;
+    const o2 = (side === 1 ? t.wl[j] + t.barrierL[j] : t.wr[j] + t.barrierR[j]) + 9;
+    const bx = t.x[j] + t.nx(j) * side * o2;
+    const by = t.y[j] + t.ny(j) * side * o2;
+    // lokale x-Achse entlang der Strecke, lokale +z-Achse zur Strecke hin (Blick der Zuschauer)
+    const tx = bx - ax;
+    const tz = -(by - ay);
+    const l = Math.hypot(tx, tz) || 1;
+    let xv = new THREE.Vector3(tx / l, 0, tz / l);
+    const toTrack = new THREE.Vector3(-side * t.nx(i), 0, side * t.ny(i));
+    let zv = new THREE.Vector3(-xv.z, 0, xv.x);
+    if (zv.dot(toTrack) < 0) {
+      xv = xv.negate();
+      zv = new THREE.Vector3(-xv.z, 0, xv.x);
+    }
+    basis.makeBasis(xv, new THREE.Vector3(0, 1, 0), zv);
+    quat.setFromRotationMatrix(basis);
+    // Modul-Ursprung ist die vordere linke Ecke: bei umgedrehter x-Achse beginnt es am Segmentende
+    const flipped = tx * xv.x + tz * xv.z < 0;
+    pos.set(flipped ? bx : ax, t.elev[i] - 0.1, -(flipped ? by : ay));
+    mats.push(new THREE.Matrix4().compose(pos, quat, sca));
+  }
+  for (const part of parts) {
+    const im = new THREE.InstancedMesh(part.geo, part.mat, mats.length);
+    mats.forEach((m, k) => im.setMatrixAt(k, m));
+    im.frustumCulled = false;
+    scene.add(im);
+  }
+}
+
+function addGrandstand(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1, sc: SceneryAssets | null = null): void {
+  if (sc && sc.parts('grandstand_module').length) {
+    addGrandstandModules(scene, t, s0, s1, side, sc);
+    return;
+  }
   const seats = seatTexture();
   const steel = new THREE.MeshStandardMaterial({ color: 0x8b9096, roughness: 0.7, metalness: 0.4, side: THREE.DoubleSide });
   const seatMat = new THREE.MeshStandardMaterial({ map: seats, roughness: 0.85, side: THREE.DoubleSide });
@@ -633,7 +688,7 @@ export interface TrackVisuals {
   setDetail: (f: number) => void;
 }
 
-export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisuals {
+export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: SceneryAssets | null = null): TrackVisuals {
   const t = map.track!;
   const th = map.theme;
   const seed = th.seed;
@@ -683,7 +738,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     let natural = 0;
     if (d >= 70) {
       const big = fbm(x / 700, y / 700, seed) * 2 - 0.5; // -0.5 .. 1.5
-      const rolling = (fbm(x / 160, y / 160, seed + 9) - 0.5) * 2.4;
+      const rolling = (fbm(x / 160, y / 160, seed + 9) - 0.5) * 4.2 + (fbm(x / 55, y / 55, seed + 15) - 0.5) * 1.3;
       const hills = th.hills * Math.max(0, big) * smooth(140, 620, d);
       natural = (hills + rolling * smooth(70, 220, d)) * edgeFade(x, y);
     }
@@ -702,6 +757,8 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const base = new THREE.Color(th.grass[0], th.grass[1], th.grass[2]);
     const dark = new THREE.Color(th.foliage[0] * 0.8, th.foliage[1] * 0.8, th.foliage[2] * 0.8);
     const rock = new THREE.Color(0.42, 0.4, 0.36);
+    const straw = new THREE.Color(0.58, 0.52, 0.28);
+    const soil = new THREE.Color(0.4, 0.31, 0.2);
     for (let iy = 0; iy < ny; iy++) {
       for (let ix = 0; ix < nx; ix++) {
         const x = x0 + ix * cell;
@@ -717,6 +774,10 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
         const forestMask = smooth(0.35, 0.6, fbm(x / 420, y / 420, seed + 3)) * th.forest;
         c.copy(base).lerp(dark, Math.min(1, forestMask * smooth(60, 240, d) * 0.9));
         c.lerp(rock, Math.min(0.5, (h / Math.max(th.hills, 1)) * 0.25 * smooth(0.6, 1, fbm(x / 300, y / 300, seed + 5))));
+        // Flecken aus getrocknetem Gras (Stroh) und blanker Erde
+        const strawM = smooth(0.52, 0.68, fbm(x / 170, y / 170, seed + 11)) * smooth(30, 90, d);
+        c.lerp(straw, Math.min(0.55, strawM * 0.6));
+        c.lerp(soil, smooth(0.62, 0.74, fbm(x / 90, y / 90, seed + 13)) * 0.4 * smooth(25, 80, d));
         const v = 0.85 + 0.3 * fbm(x / 60, y / 60, seed + 7);
         col[k * 3] = c.r * v;
         col[k * 3 + 1] = c.g * v;
@@ -754,9 +815,9 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const g = c.getContext('2d')!;
     g.drawImage(img, 0, 0, 512, 512);
     // Mähstreifen quer zur Strecke (Wiederholung entlang v)
-    g.fillStyle = 'rgba(255,255,255,0.13)';
+    g.fillStyle = 'rgba(255,255,255,0.06)';
     g.fillRect(0, 0, 512, 256);
-    g.fillStyle = 'rgba(0,30,0,0.12)';
+    g.fillStyle = 'rgba(0,30,0,0.06)';
     g.fillRect(0, 256, 512, 256);
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -856,12 +917,12 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
 
   // ---- Bauwerke an der Start/Ziel-Geraden ----
   addGantry(scene, t);
-  addGrandstand(scene, t, -330, -60, -1);
-  addGrandstand(scene, t, 40, 260, -1);
+  addGrandstand(scene, t, -330, -60, -1, scenery);
+  addGrandstand(scene, t, 40, 260, -1, scenery);
   const pitS0 = t.pitZone.box0 - 12;
   const pitS1 = t.pitZone.box0 + 22 * 11 + 4;
   const leftS0 = Math.max(20, pitS1 + 25);
-  addGrandstand(scene, t, leftS0, leftS0 + 180, 1);
+  addGrandstand(scene, t, leftS0, leftS0 + 180, 1, scenery);
   addPitBuilding(scene, t, pitS0, pitS1, 1);
   // Kurventribünen außen an den engsten Kurven, Streckenposten und Flutlichtmasten
   const stands: Array<{ s0: number; s1: number; side: 1 | -1 }> = [
@@ -881,7 +942,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
       if (used.some((u) => Math.min(Math.abs(u - sc), t.length - Math.abs(u - sc)) < 550)) continue;
       used.push(sc);
       const side: 1 | -1 = t.curv[c.i] > 0 ? -1 : 1;
-      addGrandstand(scene, t, sc - 70, sc + 70, side);
+      addGrandstand(scene, t, sc - 70, sc + 70, side, scenery);
       stands.push({ s0: sc - 70, s1: sc + 70, side });
       if (used.length >= 5) break;
     }
@@ -991,6 +1052,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const needleMat = new THREE.MeshLambertMaterial({ map: nt, emissiveMap: nt, emissive: 0xffffff, emissiveIntensity: 0.38, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
     type Tree = { x: number; y: number; h: number; tint: number; con: boolean };
     const trees: Tree[] = [];
+    const hi: Tree[] = [];
     const gs = 13;
     const maxTrees = 6500;
     const reach = 360;
@@ -1018,7 +1080,9 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
         const p = th.forest * (0.15 + 0.85 * patch) * (0.3 + 0.7 * (1 - d / reach));
         if (rnd() > p) continue;
         const con = fbm(x / 500, y / 500, seed + 4) * 1.25 + (rnd() - 0.5) * 0.3 < th.conifer;
-        trees.push({ x, y, h: con ? 9 + rnd() * 9 : 7 + rnd() * 7, tint: 0.75 + rnd() * 0.5, con });
+        const tr: Tree = { x, y, h: con ? 9 + rnd() * 9 : 7 + rnd() * 7, tint: 0.75 + rnd() * 0.5, con };
+        if (scenery && d < 95) hi.push(tr);
+        else trees.push(tr);
       }
     }
     // Ferne Waldschicht: größere, gröbere Bäume bis ~1.1 km für Tiefe im Hintergrund
@@ -1087,6 +1151,96 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap): TrackVisual
     const coneGeo = conBuild();
     mk(coneGeo, cons, 0.55);
     mk(leafBuild(), leaf, 0.75);
+
+    // ---- Blender-Objekte nahe der Strecke: detaillierte Bäume, Büsche, Grasbüschel (Stroh und Grün gemischt) ----
+    if (scenery) {
+      const fm = Math.max(th.foliage[0], th.foliage[1], th.foliage[2]);
+      const tintCol = (k: number, boost: number) =>
+        col.setRGB((0.6 + 0.4 * (th.foliage[0] / fm)) * k * boost, (0.6 + 0.4 * (th.foliage[1] / fm)) * k * boost, (0.6 + 0.4 * (th.foliage[2] / fm)) * k * boost);
+      const isFoliage = (m: THREE.Material) => /Leaf|Needle|Bush/i.test(m.name);
+      const place = (name: string, items: Array<{ x: number; y: number; h: number; tint: number }>, boost: number, add: (im: THREE.InstancedMesh, n: number) => void) => {
+        if (!items.length) return;
+        const hh = scenery.height(name);
+        for (const part of scenery.parts(name)) {
+          const im = new THREE.InstancedMesh(part.geo, part.mat, items.length);
+          const leafy = isFoliage(part.mat);
+          items.forEach((it, k) => {
+            e.set(0, rnd() * 6.283, 0);
+            q.setFromEuler(e);
+            const sc1 = it.h / hh;
+            pos.set(it.x, heightAt(it.x, it.y) - 0.1, -it.y);
+            scl.set(sc1, sc1, sc1);
+            m4.compose(pos, q, scl);
+            im.setMatrixAt(k, m4);
+            if (leafy) im.setColorAt(k, tintCol(it.tint, boost));
+          });
+          add(im, items.length);
+        }
+      };
+      // Bäume
+      const maxHi = 260;
+      let hl = hi;
+      if (hl.length > maxHi) {
+        const step = hl.length / maxHi;
+        hl = Array.from({ length: maxHi }, (_, k) => hi[Math.floor(k * step)]);
+      }
+      const buckets = new Map<string, Tree[]>();
+      const bn = ['tree_broad_1', 'tree_broad_2', 'tree_broad_3'];
+      const cn = ['tree_conifer_1', 'tree_conifer_2'];
+      for (const tr of hl) {
+        const pool = tr.con ? cn : bn;
+        const nm = pool[Math.floor(rnd() * pool.length)];
+        (buckets.get(nm) ?? buckets.set(nm, []).get(nm)!).push(tr);
+      }
+      for (const [nm, arr] of buckets) {
+        place(nm, arr, nm.includes('conifer') ? 1.7 : 1.15, (im, n) => {
+          im.frustumCulled = false;
+          scene.add(im);
+          treeMeshes.push({ im, total: n });
+        });
+      }
+      // Büsche und Grasbüschel in Chunks (Frustum-Culling), am Streckenrand
+      type Tuft = { x: number; y: number; h: number; tint: number };
+      const chunks = new Map<string, Map<string, Tuft[]>>();
+      const put = (name: string, tf: Tuft) => {
+        const key = `${Math.floor(tf.x / 140)}:${Math.floor(tf.y / 140)}`;
+        const m = chunks.get(key) ?? chunks.set(key, new Map()).get(key)!;
+        (m.get(name) ?? m.set(name, []).get(name)!).push(tf);
+      };
+      const step = Math.max(1, Math.round(3.5 / t.ds));
+      for (let i = 0; i < t.n; i += step) {
+        for (const sd of [1, -1] as const) {
+          const edge = sd === 1 ? t.wl[i] + t.barrierL[i] : t.wr[i] + t.barrierR[i];
+          const sv = t.s[i];
+          const inStand = stands.some((z) => z.side === sd && sv > z.s0 - 6 && sv < z.s1 + 6);
+          const nTuft = 5 + (rnd() < 0.5 ? 1 : 0);
+          for (let k = 0; k < nTuft; k++) {
+            const lat = edge + 1.2 + Math.pow(rnd(), 1.6) * 38;
+            if (inStand && lat < edge + 42) continue;
+            const x = t.x[i] + t.nx(i) * sd * lat + (rnd() - 0.5) * 3;
+            const y = t.y[i] + t.ny(i) * sd * lat + (rnd() - 0.5) * 3;
+            const dry = fbm(x / 120, y / 120, seed + 12) + (rnd() - 0.5) * 0.25 > 0.58;
+            const nm = dry ? (rnd() < 0.5 ? 'grass_dry_1' : 'grass_dry_2') : rnd() < 0.5 ? 'grass_green_1' : 'grass_green_2';
+            put(nm, { x, y, h: 0.45 + rnd() * 0.75, tint: 0.8 + rnd() * 0.4 });
+          }
+          // vereinzelt Büsche weiter draußen
+          if (rnd() < 0.05) {
+            const lat = edge + 8 + rnd() * 40;
+            const x = t.x[i] + t.nx(i) * sd * lat;
+            const y = t.y[i] + t.ny(i) * sd * lat;
+            if (!(inStand && lat < edge + 42)) put(rnd() < 0.5 ? 'bush_1' : 'bush_2', { x, y, h: 1.6 + rnd() * 1.6, tint: 0.8 + rnd() * 0.4 });
+          }
+        }
+      }
+      for (const m of chunks.values()) {
+        for (const [nm, arr] of m) {
+          place(nm, arr, 1.0, (im) => {
+            im.computeBoundingSphere();
+            scene.add(im);
+          });
+        }
+      }
+    }
   }
 
   // ---- ferne Berge ----

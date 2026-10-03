@@ -45,3 +45,7 @@ Bäume sind Instanzen (ca. 6 500 nah + 3 800 fern). Bei „Niedrig“ bzw. wenn 
 ## Optik nach Vorlage (Drift-Strecke)
 
 Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientieren sich an einer vom Nutzer gelieferten Drift-Strecke: schwarzer Drei-Holm-Zaun, orange-weiße Leitpfosten, hohe Werbefahnen und Tafeln (erfundene Marken), Chevron-Schilder, Erdstreifen zwischen Asphalt und Zaun, bläulich-graues Asphalt, Bäume aus Blattkarten mit prozeduraler Laubtextur (`trackVisuals.ts`, `trackProps.ts`, `worldVisuals.ts`).
+
+## Landschaftsobjekte aus Blender
+
+`tools/make_scenery.py` (Blender 5, headless: `blender -b -P tools/make_scenery.py -- public/models/scenery.glb` bzw. mit `bpy`-Modul) erzeugt Laub-/Nadelbäume mit echtem Stamm, Ästen und Blattkarten, Grasbüschel (grün und Stroh), Büsche und ein Tribünenmodul (Betonstufen, Sitzschalen, Publikum, Dach) als Draco-GLB. `src/render/sceneryAssets.ts` lädt die Datei; `trackVisuals.ts` instanziert die Objekte streckennah (Bäume bis ~95 m, Gras/Büsche in Chunks mit Frustum-Culling), weiter weg bleiben die günstigen Kartenbäume. Das Gelände hat zusätzlich sanfte Wellen sowie Stroh- und Erdflecken.

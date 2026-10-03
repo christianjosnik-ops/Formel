@@ -23,6 +23,7 @@ import { createScene } from './render/scene';
 import { DebrisRenderer, Effects } from './render/effects';
 import { buildWorldVisuals } from './render/worldVisuals';
 import { buildTrackVisuals } from './render/trackVisuals';
+import { loadSceneryAssets } from './render/sceneryAssets';
 import { createMap } from './world/maps';
 import { LapTimer } from './ui/lap';
 import { Hud } from './ui/hud';
@@ -37,7 +38,8 @@ const { renderer, scene, camera } = bundle;
 
 const gameMap = createMap(settings.map);
 const worldMap = gameMap.world;
-const visuals = gameMap.track ? buildTrackVisuals(scene, gameMap) : buildWorldVisuals(scene, worldMap, true);
+const scenery = gameMap.track ? await loadSceneryAssets() : null;
+const visuals = gameMap.track ? buildTrackVisuals(scene, gameMap, scenery) : buildWorldVisuals(scene, worldMap, true);
 if (gameMap.track) {
   // Strecke: Gelände ersetzt die mitlaufende Grasfläche; Dunst und große Sichtweite für Berge
   bundle.ground.visible = false;
