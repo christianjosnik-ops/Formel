@@ -138,34 +138,193 @@ def foliage_needle():
 
 
 def crowd_texture():
-    w, h = 512, 128
+    w, h = 1024, 256
     arr = np.zeros((h, w, 4), np.float32)
     r = random.Random(21)
-    shirts = [(0.85, 0.12, 0.12), (0.12, 0.28, 0.75), (0.95, 0.95, 0.95), (0.95, 0.75, 0.1), (0.1, 0.1, 0.12), (0.15, 0.55, 0.28), (0.9, 0.45, 0.1), (0.55, 0.55, 0.6)]
-    skins = [(0.93, 0.78, 0.65), (0.78, 0.58, 0.44), (0.55, 0.38, 0.28), (0.42, 0.28, 0.2)]
-    x = 4
-    while x < w - 10:
+    shirts = [(0.80, 0.08, 0.08), (0.10, 0.25, 0.70), (0.93, 0.93, 0.93), (0.92, 0.72, 0.08), (0.08, 0.08, 0.10), (0.12, 0.50, 0.25), (0.88, 0.42, 0.08), (0.50, 0.52, 0.58), (0.65, 0.12, 0.35)]
+    skins = [(0.93, 0.76, 0.62), (0.80, 0.60, 0.45), (0.58, 0.40, 0.29), (0.40, 0.27, 0.19), (0.88, 0.68, 0.55)]
+    hairs = [(0.08, 0.06, 0.05), (0.25, 0.15, 0.08), (0.55, 0.40, 0.18), (0.75, 0.72, 0.68), (0.35, 0.2, 0.1)]
+
+    def rect(x0, x1, y0, y1, c):
+        x0, x1, y0, y1 = int(max(0, x0)), int(min(w, x1)), int(max(0, y0)), int(min(h, y1))
+        if x1 > x0 and y1 > y0:
+            arr[y0:y1, x0:x1, :3] = c
+            arr[y0:y1, x0:x1, 3] = 1
+
+    # Bild y wächst nach oben (glTF-v), Kopf liegt oben = größere y-Werte
+    x = 10.0
+    while x < w - 20:
         sh = shirts[r.randrange(len(shirts))]
+        sh = tuple(np.clip(np.array(sh) * (0.8 + 0.3 * r.random()), 0, 1))
         sk = skins[r.randrange(len(skins))]
-        sx = 20 + r.random() * 5
-        top = 30 + r.random() * 18
-        # Oberkörper
-        arr[int(top + 18):int(top + 60), int(x - sx * 0.55):int(x + sx * 0.55), :3] = sh
-        arr[int(top + 18):int(top + 60), int(x - sx * 0.55):int(x + sx * 0.55), 3] = 1
-        draw_ellipse(arr, x, top + 20, sx * 0.62, sx * 0.5, 0, sh)
-        # Kopf
-        draw_ellipse(arr, x, top + 4, sx * 0.34, sx * 0.4, 0, sk)
-        if r.random() < 0.35:  # Mütze/Haare
-            draw_ellipse(arr, x, top - 3, sx * 0.36, sx * 0.2, 0, shirts[r.randrange(len(shirts))])
-        x += sx * (0.75 + r.random() * 0.45)
-    arr[..., :3] *= 0.9
+        sx = 34 + r.random() * 12          # Schulterbreite
+        base = 6 + r.random() * 14          # Sitzhöhe
+        torso_h = 84 + r.random() * 22
+        # Oberkörper (abgerundet über Ellipse + Rechteck)
+        rect(x - sx * 0.5, x + sx * 0.5, base, base + torso_h * 0.7, sh)
+        draw_ellipse(arr, x, base + torso_h * 0.72, sx * 0.55, torso_h * 0.28, 0, sh)
+        # Streifen/Aufdruck
+        if r.random() < 0.4:
+            rect(x - sx * 0.5, x + sx * 0.5, base + torso_h * 0.35, base + torso_h * 0.45, (1, 1, 1))
+        head_y = base + torso_h + 14
+        # Hals + Kopf
+        rect(x - 5, x + 5, base + torso_h * 0.9, head_y - 6, sk)
+        draw_ellipse(arr, x, head_y + 6, 13, 16, 0, sk)
+        hc = hairs[r.randrange(len(hairs))]
+        if r.random() < 0.45:  # Kappe
+            cc = shirts[r.randrange(len(shirts))]
+            draw_ellipse(arr, x, head_y + 14, 15, 9, 0, cc)
+            rect(x - 17, x + 4, head_y + 8, head_y + 12, cc)
+        else:
+            draw_ellipse(arr, x, head_y + 15, 13, 8, 0, hc)
+        # Arme: ein Teil hat Arme in der Luft
+        pose = r.random()
+        if pose < 0.28:
+            for side in (-1, 1):
+                ax = x + side * sx * 0.62
+                rect(ax - 4, ax + 4, base + torso_h * 0.5, base + torso_h + 40, sh)
+                draw_ellipse(arr, ax, base + torso_h + 44, 6, 7, 0, sk)
+        elif pose < 0.4:
+            ax = x + (sx * 0.62 if r.random() < 0.5 else -sx * 0.62)
+            rect(ax - 4, ax + 4, base + torso_h * 0.5, base + torso_h + 34, sh)
+            draw_ellipse(arr, ax, base + torso_h + 38, 6, 7, 0, sk)
+            if r.random() < 0.5:  # Fähnchen
+                fc = shirts[r.randrange(len(shirts))]
+                rect(ax - 1, ax + 1, base + torso_h + 40, base + torso_h + 90, (0.35, 0.3, 0.25))
+                rect(ax + 1, ax + 30, base + torso_h + 66, base + torso_h + 90, fc)
+        else:
+            for side in (-1, 1):
+                ax = x + side * sx * 0.54
+                rect(ax - 4, ax + 4, base + 8, base + torso_h * 0.6, tuple(np.clip(np.array(sh) * 0.9, 0, 1)))
+        x += sx * (0.82 + r.random() * 0.35)
+    arr[..., :3] *= 0.92
     return arr
+
+
+def concrete_texture():
+    w = h = 512
+    n = 0.55 * value_noise(w, h, 128, 31) + 0.3 * value_noise(w, h, 32, 32) + 0.15 * value_noise(w, h, 6, 33)
+    base = 0.50 + 0.22 * n
+    img = np.zeros((h, w, 4), np.float32)
+    # Schalungsfugen (horizontal alle 1/4, vertikal alle 1/2) und Lunker
+    rows = np.arange(h)[:, None]
+    cols = np.arange(w)[None, :]
+    seam = ((rows % 128) < 2).astype(np.float32) * 0.18 + ((cols % 256) < 2).astype(np.float32) * 0.12
+    pits = (value_noise(w, h, 3, 34) > 0.86).astype(np.float32) * 0.12
+    streak = np.clip(value_noise(w, h, 90, 35)[:, :] , 0, 1)
+    streaks = np.abs(value_noise(w, 4, 5, 36))  # vertikale Wasserläufe
+    streaks = np.repeat(streaks, h // 4 + 1, axis=0)[:h]
+    stain = (streaks > 0.7).astype(np.float32) * 0.08 * (1 - rows / h)
+    shade = base - seam - pits - stain
+    img[..., 0] = shade * 1.0
+    img[..., 1] = shade * 1.0
+    img[..., 2] = shade * 1.02
+    img[..., 3] = 1
+    return np.clip(img, 0, 1)
+
+
+def seat_texture():
+    # obere Hälfte (v 0.5..1 in glTF, unten im Bild = v 0): Sitzfläche von oben, untere Hälfte: Rückenlehne
+    w, h = 128, 256
+    arr = np.zeros((h, w, 4), np.float32)
+    arr[..., :3] = 0.08
+    arr[..., 3] = 1
+
+    def rrect(y0, y1, x0, x1, c, rad=14):
+        ys, xs = np.mgrid[y0:y1, x0:x1]
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        hw, hh = (x1 - x0) / 2, (y1 - y0) / 2
+        dx = np.maximum(np.abs(xs - cx) - (hw - rad), 0)
+        dy = np.maximum(np.abs(ys - cy) - (hh - rad), 0)
+        m = dx * dx + dy * dy <= rad * rad
+        shade = 0.82 + 0.18 * (1 - np.abs(ys - cy) / hh)
+        sub = arr[y0:y1, x0:x1]
+        for k in range(3):
+            sub[..., k] = np.where(m, c * shade, sub[..., k])
+    rrect(6, 122, 8, 120, 0.95, 18)      # Rückenlehne (unten im Bild: v 0..0.5)
+    rrect(136, 250, 8, 120, 0.9, 22)     # Sitzfläche
+    # Mittelrippe der Lehne
+    arr[14:114, 62:66, :3] *= 0.8
+    return arr
+
+
+def roof_texture():
+    w = h = 512
+    img = np.zeros((h, w, 4), np.float32)
+    n = value_noise(w, h, 24, 41)
+    cols = np.arange(w)[None, :]
+    rows = np.arange(h)[:, None]
+    rib = 0.5 + 0.5 * np.sin(cols * (2 * math.pi / 32))
+    seam = ((rows % 256) < 3).astype(np.float32) * 0.2
+    shade = 0.72 + 0.1 * rib + 0.08 * n - seam
+    img[..., 0] = shade * 0.96
+    img[..., 1] = shade * 0.98
+    img[..., 2] = shade * 1.0
+    img[..., 3] = 1
+    return np.clip(img, 0, 1)
+
+
+def cladding_texture():
+    w = h = 512
+    img = np.zeros((h, w, 4), np.float32)
+    cols = np.arange(w)[None, :]
+    rows = np.arange(h)[:, None]
+    prof = np.abs(((cols % 64) / 64.0) - 0.5) * 2
+    n = value_noise(w, h, 40, 51)
+    shade = 0.30 + 0.12 * prof + 0.05 * n - ((rows % 256) < 2).astype(np.float32) * 0.1
+    img[..., 0] = shade * 0.92
+    img[..., 1] = shade * 0.98
+    img[..., 2] = shade * 1.08
+    img[..., 3] = 1
+    return np.clip(img, 0, 1)
+
+
+def ad_texture():
+    w, h = 1024, 128
+    img = np.zeros((h, w, 4), np.float32)
+    img[..., 3] = 1
+    r = random.Random(61)
+    brands = [((0.85, 0.08, 0.1), (1, 1, 1)), ((0.08, 0.28, 0.7), (1, 0.85, 0.1)), ((0.96, 0.96, 0.97), (0.8, 0.1, 0.12)), ((0.06, 0.07, 0.09), (0.95, 0.75, 0.1)), ((0.1, 0.5, 0.35), (1, 1, 1)), ((0.95, 0.5, 0.1), (0.1, 0.1, 0.12)), ((0.45, 0.2, 0.6), (1, 1, 1))]
+    x = 0
+    while x < w:
+        bw = int(r.choice([160, 192, 224, 256]))
+        bg, fg = brands[r.randrange(len(brands))]
+        bw = min(bw, w - x)
+        img[:, x:x + bw, :3] = bg
+        # Pseudo-Schriftzug: Blöcke wie Buchstaben
+        px = x + 14
+        while px < x + bw - 26:
+            cw = r.choice([14, 18, 22, 26])
+            if r.random() < 0.2:
+                px += 10
+                continue
+            top, bot = 38, 90
+            img[top:bot, px:px + 5, :3] = fg
+            if r.random() < 0.8:
+                img[top:top + 6, px:px + cw, :3] = fg
+            if r.random() < 0.6:
+                img[(top + bot) // 2:(top + bot) // 2 + 6, px:px + cw, :3] = fg
+            if r.random() < 0.5:
+                img[top:bot, px + cw - 5:px + cw, :3] = fg
+            if r.random() < 0.4:
+                img[bot - 6:bot, px:px + cw, :3] = fg
+            px += cw + 8
+        img[:5, x:x + bw, :3] = fg
+        img[-5:, x:x + bw, :3] = fg
+        img[:, x:x + 2, :3] = 1
+        x += bw
+    return img
 
 
 img_bark = make_image('bark', bark_texture())
 img_fol_b = make_image('foliage_broad', foliage_broad())
 img_fol_n = make_image('foliage_needle', foliage_needle())
 img_crowd = make_image('crowd', crowd_texture())
+img_conc = make_image('concrete', concrete_texture())
+img_seat = make_image('seat', seat_texture())
+img_roof = make_image('roof', roof_texture())
+img_clad = make_image('cladding', cladding_texture())
+img_ad = make_image('ad', ad_texture())
 
 
 # ----------------------------------------------------------------------------------------------
@@ -225,10 +384,12 @@ M_LEAF = mat_image('LeafBroad', img_fol_b, alpha=True, rough=0.8, vc=True)
 M_NEEDLE = mat_image('LeafNeedle', img_fol_n, alpha=True, rough=0.8, vc=True)
 M_CROWD = mat_image('Crowd', img_crowd, alpha=True, rough=0.9, vc=False)
 M_GRASS = mat_color('Grass', (1, 1, 1), rough=0.85, vc=True)
-M_CONC = mat_color('Concrete', (0.62, 0.63, 0.65), rough=0.95)
+M_CONC = mat_image('Concrete', img_conc, rough=0.95, vc=True)
 M_STEEL = mat_color('Steel', (0.55, 0.58, 0.62), rough=0.45, metal=0.7)
-M_SEAT = mat_color('Seat', (1, 1, 1), rough=0.6, vc=True)
-M_ROOF = mat_color('Roof', (0.9, 0.92, 0.94), rough=0.55)
+M_SEAT = mat_image('Seat', img_seat, rough=0.55, vc=True)
+M_ROOF = mat_image('Roof', img_roof, rough=0.5)
+M_WALL = mat_image('Cladding', img_clad, rough=0.5)
+M_AD = mat_image('Ad', img_ad, rough=0.6)
 M_DARK = mat_color('Dark', (0.08, 0.09, 0.1), rough=0.8)
 
 
@@ -368,13 +529,13 @@ def noise3(p, seed=0):
 # Laubbaum
 # ----------------------------------------------------------------------------------------------
 
-def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
+def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0, lod=False):
     r = random.Random(seed)
     b = Builder(name)
     trunk_h = height * 0.38
     # Stammkurve mit leichter Biegung, Wurzelanlauf
     pts, radii = [], []
-    nr = 12
+    nr = 6 if lod else 12
     bend = Vector((r.uniform(-1, 1), r.uniform(-1, 1), 0)).normalized() * (0.25 + lean)
     for i in range(nr):
         t = i / (nr - 1)
@@ -383,14 +544,14 @@ def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
         pts.append(Vector((off.x, off.y, z)))
         flare = 1 + 1.15 * math.exp(-max(z, 0) / 0.55)
         radii.append(trunk_r * (1 - 0.45 * t) * flare)
-    add_tube(b, pts, radii, 12, M_BARK, color=(1, 1, 1), ridge=0.07, uv_v=0.5, seed=seed)
+    add_tube(b, pts, radii, 6 if lod else 12, M_BARK, color=(1, 1, 1), ridge=0.0 if lod else 0.07, uv_v=0.5, seed=seed)
     # Hauptäste
     tips = []
 
     def branch(start, direction, length, radius, depth):
         p = [start]
         d = direction.normalized()
-        steps = 5
+        steps = 3 if lod else 5
         cur = start.copy()
         radii_b = []
         for i in range(steps):
@@ -399,7 +560,7 @@ def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
             cur = cur + d * (length / steps)
             p.append(cur.copy())
         radii_b = [radius * (1 - 0.8 * i / steps) for i in range(steps + 1)]
-        add_tube(b, p, radii_b, 7, M_BARK, ridge=0.05, uv_v=0.6, seed=r.random() * 9)
+        add_tube(b, p, radii_b, 4 if lod else 7, M_BARK, ridge=0.0 if lod else 0.05, uv_v=0.6, seed=r.random() * 9)
         tips.append((cur.copy(), d))
         if depth > 0:
             for _ in range(2 + (depth > 1)):
@@ -415,7 +576,7 @@ def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
         az = (i / nb) * math.tau + r.uniform(-0.3, 0.3)
         el = r.uniform(0.55, 1.1)
         dirn = Vector((math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el) + 0.25))
-        branch(start, dirn, height * r.uniform(0.28, 0.4), trunk_r * 0.45 * (1.15 - t * 0.4), 1)
+        branch(start, dirn, height * r.uniform(0.28, 0.4), trunk_r * 0.45 * (1.15 - t * 0.4), 0 if lod else 1)
     # Krone aus Blattkarten: um die Astspitzen und im Volumen einer abgeflachten Kugel
     crown_c = Vector((pts[-1].x, pts[-1].y, trunk_h + height * 0.30))
     def shade_at(c):
@@ -423,24 +584,25 @@ def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
         dist = min(1.0, rel.length / crown_r)
         top = max(0.0, min(1.0, (rel.z / crown_r + 0.6) / 1.5))
         return 0.78 + 0.45 * top + 0.12 * dist
+    gs = 1.6 if lod else 1.0
     for (tip, d) in tips:
-        for _ in range(7):
+        for _ in range(4 if lod else 7):
             c = tip + Vector((r.uniform(-1.3, 1.3), r.uniform(-1.3, 1.3), r.uniform(-0.8, 1.1)))
             rel = c - crown_c
             rel.z *= 1.15
             if rel.length > crown_r * 1.08:
                 c = crown_c + rel.normalized() * crown_r * 1.05
             sh = shade_at(c) * r.uniform(0.92, 1.08)
-            s = r.uniform(1.5, 2.3)
+            s = r.uniform(1.5, 2.3) * gs
             nrm = Vector((r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(-0.2, 1))).normalized()
             add_card(b, c, (s, s * 0.9), nrm, Vector((0, 0, 1)), M_LEAF, (sh, sh, sh))
-    for _ in range(95):
+    for _ in range(64 if lod else 95):
         a = r.random() * math.tau
         el = math.asin(r.uniform(-0.55, 1.0))
         rr = crown_r * (0.35 + 0.65 * r.random() ** 0.5)
         c = crown_c + Vector((math.cos(a) * math.cos(el) * rr, math.sin(a) * math.cos(el) * rr, math.sin(el) * rr * 0.85))
         sh = shade_at(c) * r.uniform(0.92, 1.08)
-        s = r.uniform(1.6, 2.5)
+        s = r.uniform(1.6, 2.5) * gs
         nrm = (c - crown_c).normalized() * 0.7 + Vector((r.uniform(-0.5, 0.5), r.uniform(-0.5, 0.5), r.uniform(0, 0.6)))
         add_card(b, c, (s, s * 0.9), nrm, Vector((0, 0, 1)), M_LEAF, (sh, sh, sh))
     ob = b.finish()
@@ -452,19 +614,19 @@ def broad_tree(name, seed, height=14.0, trunk_r=0.32, crown_r=4.6, lean=0.0):
 # Nadelbaum
 # ----------------------------------------------------------------------------------------------
 
-def conifer(name, seed, height=18.0, trunk_r=0.28, width=3.2):
+def conifer(name, seed, height=18.0, trunk_r=0.28, width=3.2, lod=False):
     r = random.Random(seed)
     b = Builder(name)
     pts = [Vector((math.sin(i * 0.7 + seed) * 0.05, math.cos(i * 0.5 + seed) * 0.05, i / 11 * height * 0.98 - 0.2)) for i in range(12)]
     radii = [trunk_r * (1 + 0.9 * math.exp(-max(p.z, 0) / 0.5)) * (1 - 0.88 * (i / 11)) for i, p in enumerate(pts)]
     add_tube(b, pts, radii, 10, M_BARK, color=(0.9, 0.85, 0.8), ridge=0.08, uv_v=0.45, seed=seed)
-    tiers = 17
+    tiers = 13 if lod else 17
     cc = Vector((0, 0, height * 0.5))
     for i in range(tiers):
         t = i / (tiers - 1)
         z = 1.6 + t * (height - 2.4)
         rad = (width * (1 - t) ** 0.9 + 0.25)
-        n = 8 if t < 0.75 else 6
+        n = (6 if t < 0.75 else 5) if lod else (8 if t < 0.75 else 6)
         for k in range(n):
             a = (k / n) * math.tau + t * 2.3 + r.uniform(-0.18, 0.18)
             ca, sa = math.cos(a), math.sin(a)
@@ -478,7 +640,7 @@ def conifer(name, seed, height=18.0, trunk_r=0.28, width=3.2):
             # zwei Karten pro Zweig: leicht gegeneinander verdreht (Fächer von oben und von der Seite)
             for tw in (0.0, 1.0):
                 nrm = (tangent * (1 - tw) + Vector((0, 0, 1)) * (0.9 * tw + 0.15)).normalized()
-                add_card(b, center, (length, length * 0.75), nrm, axis, M_NEEDLE, (shade, shade, shade))
+                add_card(b, center, (length * (1.3 if lod else 1), length * (1.0 if lod else 0.75)), nrm, axis, M_NEEDLE, (shade, shade, shade))
     ob = b.finish()
     finish_smooth_foliage(ob, cc, 2.2)
     return ob
@@ -563,53 +725,207 @@ def box(b, x0, y0, z0, x1, y1, z1, mat, color=None):
             li[uv].uv = (0, 0)
 
 
-def grandstand_module(name, length=8.0):
+def _layers(b):
+    bm = b.bm
+    uv = bm.loops.layers.uv.verify()
+    col = bm.loops.layers.color.get('Col') or bm.loops.layers.color.new('Col')
+    return uv, col
+
+
+def quad_uv(b, pts, mat, color, uvs):
+    bm = b.bm
+    uv, col = _layers(b)
+    f = bm.faces.new([bm.verts.new(p) for p in pts])
+    f.material_index = b.mat_index(mat)
+    for li, t in zip(f.loops, uvs):
+        li[col] = (*color, 1)
+        li[uv].uv = t
+    return f
+
+
+def solid(b, corners, mat, color=(1, 1, 1)):
+    """Geschlossener Quader aus 8 Ecken (0-3 unten/Anfang, 4-7 oben/Ende) mit nach außen zeigenden Normalen."""
+    bm = b.bm
+    uv, col = _layers(b)
+    mi = b.mat_index(mat)
+    v = [bm.verts.new(p) for p in corners]
+    cen = sum((Vector(p) for p in corners), Vector()) / 8
+    for idx in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+        f = bm.faces.new([v[i] for i in idx])
+        f.material_index = mi
+        f.normal_update()
+        if f.normal.dot(f.calc_center_median() - cen) < 0:
+            f.normal_flip()
+        for li in f.loops:
+            li[col] = (*color, 1)
+            li[uv].uv = (0, 0)
+
+
+def beam(b, p0, p1, w, t, mat, color=(1, 1, 1), side=(1, 0, 0)):
+    p0, p1 = Vector(p0), Vector(p1)
+    d = (p1 - p0).normalized()
+    s = Vector(side)
+    s = (s - d * s.dot(d)).normalized()
+    n = d.cross(s).normalized()
+    cs = []
+    for e in (p0, p1):
+        for sx, nx in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            cs.append(e + s * (w / 2) * sx + n * (t / 2) * nx)
+    solid(b, cs, mat, color)
+
+
+def box2(b, x0, y0, z0, x1, y1, z1, mat, color=(1, 1, 1)):
+    solid(b, [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)], mat, color)
+
+
+def proj_uv(b, tiles):
+    """UVs per dominanter Flächenrichtung in Metern / Kachelgröße für die angegebenen Materialien."""
+    bm = b.bm
+    uv, _ = _layers(b)
+    for f in bm.faces:
+        m = b.mats[f.material_index]
+        if m not in tiles:
+            continue
+        tile = tiles[m]
+        f.normal_update()
+        n = f.normal
+        ax = max(range(3), key=lambda k: abs(n[k]))
+        for li in f.loops:
+            p = li.vert.co
+            if ax == 0:
+                li[uv].uv = (p.y / tile, p.z / tile)
+            elif ax == 1:
+                li[uv].uv = (p.x / tile, p.z / tile)
+            else:
+                li[uv].uv = (p.x / tile, p.y / tile)
+
+
+def seat_strip(b, xa, xb, y0, zt, color):
+    """Reihe aus Einzelsitzen (Sitzfläche + Lehne) als zwei Quader mit Sitztextur (0,5 m pro Sitz)."""
+    n = max(1, int(round((xb - xa) / 0.5)))
+    xb = xa + n * 0.5
+    uv_rep = n
+    # Sitzfläche
+    ya, yb, za, zb = y0 + 0.14, y0 + 0.58, zt, zt + 0.08
+    bm = b.bm
+    # oben (Sitztextur v 0.5..1)
+    quad_uv(b, [(xa, ya, zb), (xb, ya, zb), (xb, yb, zb), (xa, yb, zb)], M_SEAT, color, [(0, 0.5), (uv_rep, 0.5), (uv_rep, 1.0), (0, 1.0)])
+    # Front/Seiten/Rückseite der Sitzfläche (dunkle Kante)
+    for pts in (
+        [(xa, ya, za), (xb, ya, za), (xb, ya, zb), (xa, ya, zb)],
+        [(xb, yb, za), (xa, yb, za), (xa, yb, zb), (xb, yb, zb)],
+        [(xa, yb, za), (xa, ya, za), (xa, ya, zb), (xa, yb, zb)],
+        [(xb, ya, za), (xb, yb, za), (xb, yb, zb), (xb, ya, zb)],
+    ):
+        quad_uv(b, pts, M_SEAT, color, [(0.02, 0.02)] * 4)
+    # Lehne
+    la, lb, lz0, lz1 = y0 + 0.52, y0 + 0.60, zb, zt + 0.62
+    quad_uv(b, [(xb, la, lz0), (xa, la, lz0), (xa, la, lz1), (xb, la, lz1)], M_SEAT, color, [(uv_rep, 0.0), (0, 0.0), (0, 0.5), (uv_rep, 0.5)])
+    quad_uv(b, [(xa, lb, lz0), (xb, lb, lz0), (xb, lb, lz1), (xa, lb, lz1)], M_SEAT, color, [(0.02, 0.02)] * 4)
+    quad_uv(b, [(xa, la, lz1), (xb, la, lz1), (xb, lb, lz1), (xa, lb, lz1)], M_SEAT, color, [(0.02, 0.02)] * 4)
+    for pts in (
+        [(xa, lb, lz0), (xa, la, lz0), (xa, la, lz1), (xa, lb, lz1)],
+        [(xb, la, lz0), (xb, lb, lz0), (xb, lb, lz1), (xb, la, lz1)],
+    ):
+        quad_uv(b, pts, M_SEAT, color, [(0.02, 0.02)] * 4)
+
+
+def crowd_row(b, xa, xb, y, z, seed):
+    cr = random.Random(seed)
+    span = (xb - xa) / 5.0 * 0.20      # Texturbreite pro Meter
+    u0 = cr.random() * max(0.01, 1 - span)
+    hgt = 1.25
+    quad_uv(b, [(xa, y, z), (xb, y, z), (xb, y, z + hgt), (xa, y, z + hgt)], M_CROWD, (1, 1, 1), [(u0, 0), (u0 + span, 0), (u0 + span, 1), (u0, 1)])
+
+
+def grandstand_module(name, L=12.0):
     b = Builder(name)
-    rows = 11
-    rise, run = 0.42, 0.85
-    depth = rows * run
-    palette = [(0.78, 0.1, 0.12), (0.12, 0.3, 0.72), (0.9, 0.9, 0.92), (0.1, 0.1, 0.12)]
-    # Betonstufen
-    for i in range(rows):
-        y0 = i * run
-        box(b, 0, y0, 0, length, y0 + run, 1.0 + (i + 1) * rise, M_CONC)
-    # Sitzschalen und Publikum
+    for m in (M_CONC, M_SEAT, M_CROWD, M_AD, M_STEEL, M_ROOF, M_WALL):
+        b.mat_index(m)
+    run, rise = 0.80, 0.38
+    aisle_x, aisle_w = L / 2, 1.3
+    segs = [(0.3, aisle_x - aisle_w / 2 - 0.05), (aisle_x + aisle_w / 2 + 0.05, L - 0.3)]
     cr = random.Random(5)
-    for i in range(rows):
-        y0 = i * run + 0.18
-        z = 1.0 + (i + 1) * rise
-        seats = 14
-        for s in range(seats):
-            x = (s + 0.5) * length / seats
-            pc = palette[(s + i) % 4] if (s // 3 + i // 2) % 2 == 0 else palette[1]
-            box(b, x - 0.2, y0, z, x + 0.2, y0 + 0.4, z + 0.05, M_SEAT, pc)
-            box(b, x - 0.2, y0 + 0.36, z + 0.05, x + 0.2, y0 + 0.42, z + 0.52, M_SEAT, pc)
-        # Publikumsstreifen (Karte stehend, texturiert)
-        add_card(b, Vector((length / 2, y0 + 0.5, z + 0.62)), (length, 1.0), Vector((0, -1, 0)), Vector((0, 0, 1)), M_CROWD, (1, 1, 1), uv_rect=(cr.random() * 0.5, 0, 0.5 + cr.random() * 0.5, 1))
-    # Treppen-Gänge und Geländer
-    box(b, -0.06, 0, 0, 0.06, depth, 1.0 + rows * rise + 0.9, M_STEEL)
-    box(b, length - 0.06, 0, 0, length + 0.06, depth, 1.0 + rows * rise + 0.9, M_STEEL)
-    # vordere Brüstung mit Holm
-    box(b, 0, -0.2, 0, length, -0.1, 1.15, M_CONC)
-    box(b, 0, -0.2, 1.15, length, -0.05, 1.22, M_STEEL)
-    for k in range(5):
-        x = (k + 0.5) * length / 5
-        box(b, x - 0.03, -0.18, 1.2, x + 0.03, -0.12, 2.0, M_STEEL)
-    box(b, 0, -0.18, 2.0, length, -0.1, 2.06, M_STEEL)
-    # Dach: Stützen und schräge Fläche mit Streben
-    top = 1.0 + rows * rise
-    for xs in (0.0, length):
-        for ys, hh in ((depth + 0.2, top + 6.2), (-0.6, top + 4.2)):
-            box(b, xs - 0.12, ys - 0.12, 0, xs + 0.12, ys + 0.12, hh, M_STEEL)
-    box(b, -0.1, -0.7, top + 4.2, length + 0.1, depth + 0.3, top + 4.45, M_ROOF)
-    # Dachneigung durch zwei Platten
-    box(b, -0.1, depth * 0.45, top + 4.4, length + 0.1, depth + 0.3, top + 6.35, M_ROOF)
-    box(b, -0.1, -0.7, top + 4.0, length + 0.1, -0.5, top + 4.5, M_STEEL)
+    palettes = {
+        'low': ((0.05, 0.14, 0.48), (0.88, 0.88, 0.9), (0.55, 0.05, 0.08)),
+        'up': ((0.52, 0.04, 0.07), (0.9, 0.9, 0.92), (0.05, 0.13, 0.44)),
+    }
+
+    def tier(tag, y_start, z_base, rows, wall_to=0.0):
+        pal = palettes[tag]
+        zt = z_base
+        for i in range(rows):
+            y0 = y_start + i * run
+            zt = z_base + (i + 1) * rise
+            box2(b, 0, y0, wall_to, L, y0 + run, zt, M_CONC, (1.0, 1.0, 1.0))
+            # hellere Treppenstufen im Gang
+            box2(b, aisle_x - aisle_w / 2, y0 - 0.01, zt - 0.02, aisle_x + aisle_w / 2, y0 + run, zt + 0.015, M_CONC, (1.25, 1.25, 1.22))
+            for si, (xa, xb) in enumerate(segs):
+                blocks = max(1, int(round((xb - xa) / 3.0)))
+                bw = (xb - xa) / blocks
+                for k in range(blocks):
+                    c = pal[0] if ((k + si * 2 + i // 3) % 4) else pal[1] if ((i // 3) % 2) else pal[2]
+                    seat_strip(b, xa + k * bw, xa + (k + 1) * bw, y0, zt, c)
+                crowd_row(b, xa, xb, y0 + 0.50, zt + 0.06, cr.randrange(10000))
+        return zt, y_start + rows * run
+
+    # Vordermauer mit Werbebande
+    box2(b, 0, -0.35, 0, L, -0.05, 1.15, M_CONC, (0.9, 0.9, 0.9))
+    quad_uv(b, [(0, -0.36, 0.05), (L, -0.36, 0.05), (L, -0.36, 1.1), (0, -0.36, 1.1)], M_AD, (1, 1, 1), [(0.1, 0), (0.1 + 1.5, 0), (0.1 + 1.5, 1), (0.1, 1)])
+    # Geländer vorne
+    for k in range(9):
+        x = 0.15 + k * (L - 0.3) / 8
+        beam(b, (x, -0.25, 1.15), (x, -0.25, 2.0), 0.05, 0.05, M_STEEL)
+    beam(b, (L / 2, -0.25, 2.0), (L / 2, -0.25, 2.0 + 0.001), L, 0.06, M_STEEL)
+    beam(b, (L / 2, -0.25, 1.6), (L / 2, -0.25, 1.6 + 0.001), L, 0.04, M_STEEL)
+
+    z0 = 0.9
+    z_low_top, y_low_end = tier('low', 0.0, z0, 14)
+    # Querweg (Concourse)
+    y_up0 = y_low_end + 3.2
+    box2(b, 0, y_low_end, 0, L, y_up0, z_low_top, M_CONC, (0.95, 0.95, 0.95))
+    # Wand zur oberen Tribüne mit Werbeband
+    z_up_base = z_low_top + 1.5
+    box2(b, 0, y_up0 - 0.0, 0, L, y_up0 + 0.2, z_up_base, M_CONC, (1, 1, 1))
+    quad_uv(b, [(0, y_up0 - 0.01, z_low_top + 0.2), (L, y_up0 - 0.01, z_low_top + 0.2), (L, y_up0 - 0.01, z_up_base - 0.15), (0, y_up0 - 0.01, z_up_base - 0.15)], M_AD, (1, 1, 1), [(0.45, 0), (0.45 + 1.5, 0), (0.45 + 1.5, 1), (0.45, 1)])
+    # Brüstung zwischen unterer Tribüne und Querweg
+    for k in range(9):
+        x = 0.15 + k * (L - 0.3) / 8
+        beam(b, (x, y_low_end + 0.05, z_low_top), (x, y_low_end + 0.05, z_low_top + 1.0), 0.05, 0.05, M_STEEL)
+    beam(b, (L / 2, y_low_end + 0.05, z_low_top + 1.0), (L / 2, y_low_end + 0.05, z_low_top + 1.001), L, 0.06, M_STEEL)
+    z_up_top, y_up_end = tier('up', y_up0 + 0.2, z_up_base, 12)
+    # Gangbrüstung: Handläufe an beiden Rändern des Mittelgangs
+    for xs in (aisle_x - aisle_w / 2 - 0.02, aisle_x + aisle_w / 2 + 0.02):
+        beam(b, (xs, 0.0, z0 + 1.0 + rise), (xs, y_low_end, z_low_top + 1.0), 0.05, 0.05, M_STEEL)
+        beam(b, (xs, y_up0 + 0.2, z_up_base + 1.0 + rise), (xs, y_up_end, z_up_top + 1.0), 0.05, 0.05, M_STEEL)
+    # Rückwand und Stützen
+    y_back = y_up_end + 0.3
+    box2(b, 0, y_up_end, 0, L, y_back, z_up_top + 0.9, M_WALL)
+    box2(b, 0, y_up_end, z_up_top + 0.9, L, y_back, 17.5, M_WALL)
+    for x in (0.0, L / 2):
+        box2(b, x, y_back, 0, x + 0.5, y_back + 0.6, 17.0, M_CONC, (0.85, 0.85, 0.85))
+        beam(b, (x + 0.25, y_back + 0.6, 6.0), (x + 0.25, y_back + 4.2, 0.0), 0.35, 0.45, M_CONC, (0.8, 0.8, 0.8))
+    # Dach: Fachwerkbinder, Dachhaut, Randträger, Leuchten
+    zr_rear, zr_front = 17.2, 12.4
+    y_front = 1.8
+    for xt in (0.2, L / 2, L - 0.2):
+        beam(b, (xt, y_back, zr_rear), (xt, y_front, zr_front), 0.16, 0.16, M_STEEL)
+        beam(b, (xt, y_back, zr_rear - 1.6), (xt, y_front, zr_front - 0.7), 0.12, 0.12, M_STEEL)
+        N = 10
+        for k in range(N):
+            f0, f1 = k / N, (k + 1) / N
+            pb = lambda f, lo: (xt, y_back + (y_front - y_back) * f, (zr_rear - lo) + ((zr_front - lo) - (zr_rear - lo)) * f)
+            lo_b = (1.6 + (0.7 - 1.6) * f0)
+            beam(b, (xt, y_back + (y_front - y_back) * f0, zr_rear - 1.6 + ((zr_front - 0.7) - (zr_rear - 1.6)) * f0), (xt, y_back + (y_front - y_back) * f1, zr_rear + (zr_front - zr_rear) * f1), 0.09, 0.09, M_STEEL)
+            beam(b, (xt, y_back + (y_front - y_back) * f1, zr_rear - 1.6 + ((zr_front - 0.7) - (zr_rear - 1.6)) * f1), (xt, y_back + (y_front - y_back) * f1, zr_rear + (zr_front - zr_rear) * f1), 0.08, 0.08, M_STEEL)
+    beam(b, (L / 2, (y_back + y_front) / 2, (zr_rear + zr_front) / 2 + 0.16), (L / 2, y_front - 0.3, zr_front + 0.1), L + 0.02, 0.12, M_ROOF)
+    beam(b, (L / 2, y_back + 0.3, zr_rear + 0.14), (L / 2, (y_back + y_front) / 2, (zr_rear + zr_front) / 2 + 0.16), L + 0.02, 0.12, M_ROOF)
+    box2(b, 0, y_front - 0.45, zr_front - 0.9, L, y_front - 0.15, zr_front + 0.4, M_ROOF)
     for k in range(3):
-        x = (k + 0.5) * length / 3
-        box(b, x - 0.05, -0.6, top + 3.9, x + 0.05, depth + 0.1, top + 4.05, M_STEEL)
-    ob = b.finish()
-    return ob
+        x = (k + 0.5) * L / 3
+        box2(b, x - 0.3, y_front + 1.4, zr_front - 0.95, x + 0.3, y_front + 1.9, zr_front - 0.6, M_STEEL)
+    proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0, M_WALL: 4.0})
+    return b.finish()
 
 
 # ----------------------------------------------------------------------------------------------
@@ -621,13 +937,18 @@ objs.append(broad_tree('tree_broad_2', 2, 17.0, 0.40, 5.6, lean=0.1))
 objs.append(broad_tree('tree_broad_3', 3, 11.5, 0.28, 4.0))
 objs.append(conifer('tree_conifer_1', 4, 19.0, 0.30, 3.4))
 objs.append(conifer('tree_conifer_2', 5, 15.0, 0.25, 2.9))
+objs.append(broad_tree('tree_broad_1_lod', 1, 14.0, 0.34, 4.8, lod=True))
+objs.append(broad_tree('tree_broad_2_lod', 2, 17.0, 0.40, 5.6, lean=0.1, lod=True))
+objs.append(broad_tree('tree_broad_3_lod', 3, 11.5, 0.28, 4.0, lod=True))
+objs.append(conifer('tree_conifer_1_lod', 4, 19.0, 0.30, 3.4, lod=True))
+objs.append(conifer('tree_conifer_2_lod', 5, 15.0, 0.25, 2.9, lod=True))
 objs.append(grass_tuft('grass_green_1', 11, False, 12))
 objs.append(grass_tuft('grass_green_2', 12, False, 10))
 objs.append(grass_tuft('grass_dry_1', 13, True, 12))
 objs.append(grass_tuft('grass_dry_2', 14, True, 9))
 objs.append(bush('bush_1', 21))
 objs.append(bush('bush_2', 22))
-objs.append(grandstand_module('grandstand_module', 8.0))
+objs.append(grandstand_module('grandstand_module', 12.0))
 
 # Material-Einstellungen für glTF: Blattkarten als Alpha-Clip
 for m in (M_LEAF, M_NEEDLE, M_CROWD):

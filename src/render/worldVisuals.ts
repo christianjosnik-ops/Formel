@@ -97,8 +97,31 @@ export function grassTexture(): THREE.CanvasTexture {
   return TEX.grass();
 }
 
-export function surfaceTexture(kind: SurfaceKind): THREE.CanvasTexture {
-  return TEX[kind]();
+const FILE_TEX: Partial<Record<SurfaceKind, string>> = { asphalt: 'asphalt', gravel: 'gravel', grass: 'grass' };
+
+function fileTexture(name: string, srgb: boolean): THREE.Texture {
+  const t = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/${name}.jpg`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** Bodentextur: aus tools/make_textures.py erzeugte Bilder (mit Normalmap), sonst prozedural. */
+export function surfaceTexture(kind: SurfaceKind): THREE.Texture {
+  const f = FILE_TEX[kind];
+  return f ? fileTexture(f, true) : TEX[kind]();
+}
+
+/** Zugehörige Normalmap (oder null). */
+export function surfaceNormal(kind: SurfaceKind): THREE.Texture | null {
+  const f = FILE_TEX[kind];
+  return f ? fileTexture(`${f}_n`, false) : null;
+}
+
+/** Erdtextur (Albedo oder Normalmap). */
+export function dirtTexture(normal = false): THREE.Texture {
+  return fileTexture(normal ? 'dirt_n' : 'dirt', !normal);
 }
 
 export { concreteTexture };
