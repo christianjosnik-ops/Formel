@@ -187,8 +187,8 @@ export function tireWallTexture(): THREE.CanvasTexture {
 }
 
 /** Baut Betonwände, Reifenbarrieren und Leitplanken. Bei tireBox werden Reifenwände als texturierte Box gezeichnet (günstig für lange Strecken). */
-export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false, heightAt: (x: number, y: number) => number = () => 0): void {
-  const concrete = walls.filter((w) => w.kind === 'concrete' || w.kind === 'pitwall');
+export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false, heightAt: (x: number, y: number) => number = () => 0, skipPitWall = false): void {
+  const concrete = walls.filter((w) => w.kind === 'concrete' || (w.kind === 'pitwall' && !skipPitWall));
   const tires = walls.filter((w) => w.kind === 'tire');
   const armco = walls.filter((w) => w.kind === 'armco');
   const m4 = new THREE.Matrix4();
