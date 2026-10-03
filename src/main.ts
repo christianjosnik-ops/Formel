@@ -411,6 +411,7 @@ let shake = 0;
 let lowCount = 0;
 let highCount = 0;
 
+let debugCam: { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null = null;
 const prof = { jsMs: 0, renderMs: 0, frames: 0, maxDt: 0 };
 function frame(now: number): void {
   requestAnimationFrame(frame);
@@ -450,6 +451,10 @@ function frame(now: number): void {
     updateAi(dt, s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);
+    if (debugCam) {
+      camera.position.set(debugCam.x, debugCam.y, debugCam.z);
+      camera.lookAt(debugCam.lx, debugCam.ly, debugCam.lz);
+    }
     visuals.updateCones(s);
     debris?.update(s);
     effects.setPixelScale(renderer.domElement.height, camera.fov);
@@ -535,7 +540,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

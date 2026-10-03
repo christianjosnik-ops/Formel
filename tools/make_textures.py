@@ -110,6 +110,20 @@ def save(name, arr, quality=88):
     print(path, os.path.getsize(path) // 1024, 'kB')
 
 
+def save_rgba(name, arr):
+    arr = np.clip(arr, 0, 1)
+    h, w, _ = arr.shape
+    img = bpy.data.images.new(name, w, h, alpha=True)
+    img.pixels = arr.astype(np.float32).ravel().tolist()
+    scene = bpy.context.scene
+    scene.render.image_settings.file_format = 'PNG'
+    scene.render.image_settings.color_mode = 'RGBA'
+    scene.render.image_settings.compression = 90
+    path = os.path.join(out, name + '.png')
+    img.save_render(path, scene=scene)
+    print(path, os.path.getsize(path) // 1024, 'kB')
+
+
 # ------------------------------------------------------------------------------------------ Gras
 def grass():
     macro = fnoise(S, 2.2, 1)
@@ -201,19 +215,120 @@ def dirt():
     macro = fnoise(S, 2.0, 31)
     d, d2, v = cells(S, 14, 32)
     crack = np.clip((d2 - d) * 5, 0, 1)
-    c0 = np.array([0.30, 0.22, 0.14], np.float32)
-    c1 = np.array([0.50, 0.38, 0.24], np.float32)
+    c0 = np.array([0.27, 0.23, 0.18], np.float32)
+    c1 = np.array([0.44, 0.38, 0.29], np.float32)
     t = macro[..., None]
     base = c0 * (1 - t) + c1 * t
-    base *= (0.6 + 0.4 * crack[..., None]) * (0.85 + 0.3 * v[..., None])
+    base *= (0.9 + 0.1 * crack[..., None]) * (0.9 + 0.2 * v[..., None])
     base *= 0.9 + 0.2 * fnoise(S, 0.8, 33)[..., None]
     # Steinchen
     d3, d32, v3 = cells(S, 6, 34)
     pebbles = (v3 > 0.82) & (d3 < 0.55)
     base[pebbles] = base[pebbles] * 0.4 + 0.45 * 0.6
-    height = 0.6 * crack + 0.4 * macro + 0.3 * pebbles
+    height = 0.25 * crack + 0.5 * macro + 0.35 * pebbles
     return base, height
 
+
+
+
+def marbles():
+    """Gummikrümel ("Marbles") neben der Ideallinie: dunkle Körner, dicht in der Mitte (u=0.5 ≈ Streifenmitte), nach außen dünner."""
+    W_, H_ = 256, 1024
+    r = np.random.default_rng(81)
+    a = np.zeros((H_, W_), np.float32)
+    n = 5200
+    ys = r.integers(0, H_, n)
+    xs = np.clip(r.normal(W_ * 0.5, W_ * 0.2, n), 0, W_ - 1).astype(int)
+    sz = r.choice([1, 1, 2, 2, 3], n)
+    val = r.uniform(0.35, 0.95, n)
+    for y, x, z, v in zip(ys, xs, sz, val):
+        a[y % H_, x] = max(a[y % H_, x], v)
+        if z > 1:
+            a[(y + 1) % H_, x] = max(a[(y + 1) % H_, x], v * 0.8)
+            a[y % H_, min(W_ - 1, x + 1)] = max(a[y % H_, min(W_ - 1, x + 1)], v * 0.8)
+        if z > 2:
+            a[(y + 1) % H_, min(W_ - 1, x + 1)] = max(a[(y + 1) % H_, min(W_ - 1, x + 1)], v * 0.7)
+    # Schlieren aus Gummiabrieb (längliche, weiche Bänder)
+    smear = fnoise(H_, 2.2, 82)[:, :W_ // 1] if False else None
+    band = np.exp(-((np.arange(W_) - W_ * 0.5) / (W_ * 0.28)) ** 2)[None, :]
+    base = fnoise(1024, 2.0, 83)[:H_, :W_]
+    smear = np.clip((base - 0.55) * 2.0, 0, 1) * band * 0.22
+    alpha = np.clip(a * 0.85 + smear, 0, 1)
+    rgba = np.zeros((H_, W_, 4), np.float32)
+    rgba[..., :3] = 0.035
+    rgba[..., 3] = alpha
+    return rgba
+
+
+def patches():
+    """Fahrbahn-Ausbesserungen, Längsrisse, Ölflecken und Bremsspuren als Overlay (quer über die ganze Fahrbahnbreite)."""
+    W_, H_ = 512, 1024
+    r = np.random.default_rng(91)
+    rgba = np.zeros((H_, W_, 4), np.float32)
+    ys, xs = np.mgrid[0:H_, 0:W_]
+    def stamp(mask, col, alpha):
+        rgba[..., :3] = np.where(mask[..., None], col, rgba[..., :3])
+        rgba[..., 3] = np.maximum(rgba[..., 3], np.where(mask, alpha, 0))
+    # Flickstellen: rechteckig, dunkler oder heller als der Rand, leicht ungerade Kanten
+    for _ in range(9):
+        cx, cy = r.uniform(40, W_ - 40), r.uniform(0, H_)
+        w, h = r.uniform(40, 150), r.uniform(60, 240)
+        rot = r.normal(0, 0.03)
+        dx, dy = xs - cx, ((ys - cy + H_ / 2) % H_) - H_ / 2
+        u = dx * math.cos(rot) + dy * math.sin(rot)
+        v = -dx * math.sin(rot) + dy * math.cos(rot)
+        m = (np.abs(u) < w / 2) & (np.abs(v) < h / 2)
+        dark = r.random() < 0.65
+        stamp(m, 0.02 if dark else 0.3, 0.32 if dark else 0.12)
+        edge = m & ((np.abs(u) > w / 2 - 2.5) | (np.abs(v) > h / 2 - 2.5))
+        stamp(edge, 0.01, 0.55)  # Fugenband (Teer)
+    # Ölflecken: weiche dunkle Ellipsen
+    for _ in range(7):
+        cx, cy = r.uniform(30, W_ - 30), r.uniform(0, H_)
+        rx, ry = r.uniform(8, 26), r.uniform(14, 60)
+        dx, dy = xs - cx, ((ys - cy + H_ / 2) % H_) - H_ / 2
+        d = (dx / rx) ** 2 + (dy / ry) ** 2
+        a = np.clip(1 - d, 0, 1) ** 1.5 * 0.5
+        rgba[..., 3] = np.maximum(rgba[..., 3], a)
+    # Längsrisse
+    for _ in range(5):
+        x = r.uniform(20, W_ - 20)
+        for y in range(0, H_, 2):
+            x += r.normal(0, 0.7)
+            xi = int(x) % W_
+            rgba[y % H_, xi, 3] = max(rgba[y % H_, xi, 3], 0.7)
+            rgba[(y + 1) % H_, xi, 3] = max(rgba[(y + 1) % H_, xi, 3], 0.7)
+    # Bremsspuren (Blockierer): dünne dunkle Bögen
+    for _ in range(4):
+        x0 = r.uniform(60, W_ - 60)
+        y0 = r.uniform(0, H_)
+        curve = r.normal(0, 0.0004)
+        for t in range(0, 380):
+            y = (y0 + t) % H_
+            x = x0 + curve * t * t * 40
+            for off in (-3, 3):
+                xi = int(x + off) % W_
+                rgba[int(y), xi, 3] = max(rgba[int(y), xi, 3], 0.45 * (1 - t / 380))
+    rgba[..., :3] = np.where(rgba[..., 3:4] > 0, rgba[..., :3], 0.02)
+    return rgba
+
+
+def paintwear():
+    """Abgenutzte weiße Linienfarbe: Alpha mit Lücken und Körnung (Kachel quer schmal, längs lang)."""
+    W_, H_ = 64, 512
+    r = np.random.default_rng(95)
+    n = fnoise(512, 1.5, 96)[:H_, :W_]
+    g = r.random((H_, W_))
+    a = np.clip(0.95 - 0.55 * np.clip((n - 0.45) * 3, 0, 1) - 0.3 * (g > 0.82), 0.1, 1)
+    rgba = np.ones((H_, W_, 4), np.float32)
+    rgba[..., :3] = 0.9 + 0.08 * r.random((H_, W_, 1))
+    rgba[..., 3] = a
+    return rgba
+
+
+save_rgba('marbles', marbles())
+save_rgba('patches', patches())
+save_rgba('paintwear', paintwear())
 
 for name, fn, strength in (('grass', grass, 5.0), ('gravel', gravel, 6.0), ('asphalt', asphalt, 3.0), ('dirt', dirt, 4.0)):
     alb, hgt = fn()
