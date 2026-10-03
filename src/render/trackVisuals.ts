@@ -1183,17 +1183,20 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
         hl = sorted.slice(0, maxHi);
         overflow = sorted.slice(maxHi);
       }
+      // in 160-m-Chunks, damit nur sichtbare Bereiche gezeichnet werden (Bild und Schattenkarte)
       const buckets = new Map<string, Tree[]>();
       const bn = ['tree_broad_1', 'tree_broad_2', 'tree_broad_3'];
       const cn = ['tree_conifer_1', 'tree_conifer_2'];
       for (const tr of hl) {
         const pool = tr.con ? cn : bn;
         const nm = pool[Math.floor(rnd() * pool.length)];
-        (buckets.get(nm) ?? buckets.set(nm, []).get(nm)!).push(tr);
+        const key = `${nm}|${Math.floor(tr.x / 160)}:${Math.floor(tr.y / 160)}`;
+        (buckets.get(key) ?? buckets.set(key, []).get(key)!).push(tr);
       }
-      for (const [nm, arr] of buckets) {
+      for (const [key, arr] of buckets) {
+        const nm = key.split('|')[0];
         place(nm, arr, nm.includes('conifer') ? 1.45 : 0.92, (im, n) => {
-          im.frustumCulled = false;
+          im.computeBoundingSphere();
           scene.add(im);
           treeMeshes.push({ im, total: n });
         }, true);
