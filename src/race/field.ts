@@ -50,7 +50,7 @@ export function shortName(d: DriverData): string {
  * ein schwächeres Aero-Paket mehr auf den Abtrieb (Red Bull: stärkster Motor, schwächeres Aero).
  * Die Konstanten sind an Rundensimulationen auf Monza kalibriert (tests/race.test.ts).
  */
-export const TEAM_K = { power: 0.0502, aero: 0.0584 };
+export const TEAM_K = { power: 0.0344, aero: 0.04 };
 
 export function teamPerformance(t: TeamData): { power: number; aero: number; powerShare: number } {
   const engine = t.engineRating ?? t.overall - 4;

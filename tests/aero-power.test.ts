@@ -54,17 +54,17 @@ describe('Aerodynamik', () => {
 describe('Antrieb 2026', () => {
   const pt = new Powertrain(TEST_CAR_2026);
 
-  it('Verbrenner liefert Spitzenleistung von 400 kW bei 11 500 rpm', () => {
+  it('Verbrenner liefert Spitzenleistung von 385 kW (Spielabstimmung) bei 11 500 rpm', () => {
     const p = (pt.iceTorque(11500) * 11500 * 2 * Math.PI) / 60;
-    expect(p).toBeCloseTo(400e3, -2);
+    expect(p).toBeCloseTo(385e3, -2);
     const p8 = (pt.iceTorque(8000) * 8000 * 2 * Math.PI) / 60;
-    expect(p8).toBeLessThan(400e3);
+    expect(p8).toBeLessThan(385e3);
   });
 
-  it('MGU-K regelt zwischen 290 und 355 km/h linear auf null', () => {
+  it('MGU-K regelt zwischen 280 und 345 km/h linear auf null', () => {
     expect(pt.kTaper(250 / 3.6)).toBe(1);
-    expect(pt.kTaper(355 / 3.6)).toBe(0);
-    expect(pt.kTaper(322.5 / 3.6)).toBeCloseTo(0.5, 2);
+    expect(pt.kTaper(345 / 3.6)).toBe(0);
+    expect(pt.kTaper(312.5 / 3.6)).toBeCloseTo(0.5, 2);
   });
 
   it('MGU-K liefert ca. 350 kW elektrisch (ca. 330 kW am Rad) bei vollem Gas im Kurvenbereich', () => {

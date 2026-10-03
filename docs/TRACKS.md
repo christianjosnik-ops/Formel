@@ -41,3 +41,18 @@ Bäume sind Instanzen (ca. 6 500 nah + 3 800 fern). Bei „Niedrig“ bzw. wenn 
 - `src/world/elevation.ts`: Höhenprofile (Näherung) für Monza, Spa und Silverstone. `Track.elev`/`grade`/`heightAt()`/`slopeAt()`. Die Physik erhält daraus die Hangabtriebskraft, die Darstellung hebt Strecke, Kerbs, Wände, Tribünen und Gelände entsprechend an; Autos und Kamera folgen der Höhe und neigen sich mit der Steigung.
 - Boxengasse links der Start/Ziel-Geraden (`PIT` in `track.ts`): zusätzliche Breite mit weichen Ein- und Ausfahrten, dünne Boxenmauer (`pitwall`), 22 Boxen, Garagenreihe mit Toren in Teamfarben, Tempo-80-Schilder.
 - `src/render/trackProps.ts`: Bremstafeln (300/200/100 m), Kurvennummern, Fangzäune an schnellen Kurven, Überführungen mit Bannern, Flutlichtmasten.
+
+## Optik nach Vorlage (Drift-Strecke)
+
+Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientieren sich an einer vom Nutzer gelieferten Drift-Strecke: schwarzer Drei-Holm-Zaun, orange-weiße Leitpfosten, hohe Werbefahnen und Tafeln (erfundene Marken), Chevron-Schilder, Erdstreifen zwischen Asphalt und Zaun, bläulich-graues Asphalt, Bäume aus Blattkarten mit prozeduraler Laubtextur (`trackVisuals.ts`, `trackProps.ts`, `worldVisuals.ts`).
+
+## Landschaftsobjekte aus Blender
+
+`tools/make_scenery.py` (Blender 5, headless: `blender -b -P tools/make_scenery.py -- public/models/scenery.glb` bzw. mit `bpy`-Modul) erzeugt Laub-/Nadelbäume mit echtem Stamm, Ästen und Blattkarten, Grasbüschel (grün und Stroh), Büsche und ein Tribünenmodul (Betonstufen, Sitzschalen, Publikum, Dach) als Draco-GLB. `src/render/sceneryAssets.ts` lädt die Datei; `trackVisuals.ts` instanziert die Objekte streckennah (Bäume bis ~95 m, Gras/Büsche in Chunks mit Frustum-Culling), weiter weg bleiben die günstigen Kartenbäume. Das Gelände hat zusätzlich sanfte Wellen sowie Stroh- und Erdflecken.
+
+### Texturen, Relief, Tribünen (v2)
+
+- `tools/make_textures.py` erzeugt kachelbare Boden-Texturen mit Normalmaps (`public/textures/`: Gras mit einzelnen Halmen, Kies, Asphalt mit Zuschlagkorn und Rissen, Erde). `surfaceTexture`/`surfaceNormal` in `worldVisuals.ts` laden sie.
+- Das Gelände hat jetzt deutliches Relief (breite Hügelzüge, Rollen, unregelmäßige Erdwälle hinter den Auslaufzonen); Gitterweite 28 m.
+- Bäume: voll detaillierte Blender-Bäume direkt an der Strecke (≤ 320 Stück), dahinter Blender-LOD-Bäume (~250 Flächen) in 450-m-Chunks mit Frustum-Culling; Dichte per `setDetail`.
+- Tribünenmodul (12 m): zwei Ränge mit Einzelsitzen, Mittelgang mit Handläufen, Querweg, Werbebanden, Publikum (Textur mit Armen/Fahnen), Fachwerkdach, Rückwand mit Verkleidung und Stützen.

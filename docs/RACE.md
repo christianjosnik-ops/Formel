@@ -22,3 +22,17 @@
 - Schwere Crashs (Stufe ≥ 3): Zeitlupe (Worker-Zeitskala), roter Blitz, Vibration, Rauch aus dem Heck bei Motorschaden.
 - Wrack-Verhalten: schleifender Unterboden, fehlende Räder und platte Reifen bremsen stark (`wreckDrag`), das Auto „driftet“ nicht mehr einfach davon.
 - Reifenbarrieren: Reifen werden bei Aufprall herausgeschleudert (`BODY_TYRE`), Strecken-Barrieren zeigen gestapelte Reifen.
+
+## KI-Rennintelligenz (v2)
+
+Jede KI bekommt von `RaceDirector.neighbours` eine Liste aller Autos im Bereich -60 m .. +170 m (Abstand, Querposition, Tempo, `wreck` = ausgefallen, seit >3,5 s stehend oder quer schleudernd). `AIDriver.update` entscheidet daraus:
+
+- **Ausweichen**: Hindernisse voraus (Unfall, Dreher) → früh bremsen, freie Seite wählen (`evade`), seitlich vorbei mit Schrittgeschwindigkeit.
+- **Angreifen**: schnelleres Auto im Windschatten setzt auf der Geraden/Bremszone zum Überholen an, bevorzugt die Innenseite der nächsten Kurve, hält den Querabstand zum Ziel und bremst bei Überlappung innen etwas später. Maximal 7 s pro Versuch, danach Pause.
+- **Verteidigen**: Verfolger dicht dahinter → einmal vor der Bremszone die Innenlinie zumachen (kein Zickzack).
+- **Nebeneinander**: Querabstand ≥ 2,7 m, in der Kurve gibt der Außenmann nach (`yield`).
+- **Kollisionsvermeidung** unabhängig von der Absicht: kein Auto in der eigenen Spur wird in unter ~1,2 s erreicht.
+
+## Fahrgefühl (v2)
+
+Mit Fahrhilfe (Stufe 1/2) entspricht voller Lenkeinschlag der Grip-Grenze des Autos (`Vehicle.maxSteerAt`/`gripLimit`), die Assist-Gierrate wird auf den Grip begrenzt. Beschleunigung: 0–100 km/h ≈ 2,4 s, 0–200 ≈ 5,3 s, 0–300 ≈ 11 s (Start-Kennfeld begrenzt das Moment bei niedrigem Tempo, MGU-K-Abregelung ab 280 km/h).
