@@ -9,7 +9,7 @@ import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
 import { GameAudio } from './audio/audio';
-import { loadCareer, prize, saveCareer } from './career';
+import { loadCareer, prize, recordResult, saveCareer } from './career';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -270,6 +270,7 @@ function startGame(): void {
 raceHud.onFinish = (pos, n, dnf) => {
   const win = prize(pos, n, settings.laps, settings.aiLevel, dnf);
   career.money += win;
+  recordResult(career, pos, dnf, win);
   saveCareer(career);
   return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €`;
 };
@@ -311,6 +312,7 @@ if (autostart) document.getElementById('start')!.classList.add('hidden');
 else start.show();
 
 const menu = setupMenu(settings, controls, {
+  onMainMenu: () => raceHud.onMenu?.(),
   onTeamChanged: buildCar,
   onCameraChanged: () => {
     rig.setMode(settings.camera, car);

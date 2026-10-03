@@ -5,6 +5,7 @@ import { carConfigFor } from '../src/race/field';
 import { AIDriver } from '../src/race/ai';
 import { RaceDirector, selectField } from '../src/race/race';
 import { createMap } from '../src/world/maps';
+import { S } from '../src/physics/layout';
 
 describe('Boxenstopps', () => {
   it('KI fährt bei hohem Verschleiß in die Box, wechselt Reifen und fährt weiter', () => {
@@ -45,6 +46,9 @@ describe('Boxenstopps', () => {
     let sawLane = false;
     let steps = 0;
     let requested = false;
+    const snap = new Float64Array(2048);
+    const approach: number[] = [];
+    const leaving: number[] = [];
     while (steps < 500 * 400) {
       if (steps % 5 === 0 && dir.state !== 'grid' && pl.pit === 0 || pl.pit === 1) driver.update(0.01, car, 'race', [], 1);
       dir.update(0.002);
@@ -56,8 +60,23 @@ describe('Boxenstopps', () => {
       }
       if (pl.pit === 2) sawLane = true;
       if (pl.pit === 3) sawService = true;
+      if (steps % 50 === 0 && (pl.pit >= 2 || sawService)) {
+        dir.writeRace(snap, 0, 0);
+        if (pl.pit === 2) approach.push(snap[S.pitDBox]);
+        if (pl.pit === 3) expect(snap[S.pitDBox]).toBe(0);
+        if (pl.pit === 4) leaving.push(snap[S.pitDBox]);
+      }
       if (sawService && pl.pit === 0) break;
     }
+    // Abstand zur Box: vor dem Halt positiv und fallend, nach der Abfahrt negativ und wachsend (Crew-Anlauf/-Rückzug)
+    expect(approach.length).toBeGreaterThan(3);
+    expect(Math.max(...approach)).toBeGreaterThan(30);
+    expect(approach[approach.length - 1]).toBeLessThan(6);
+    expect(approach[approach.length - 1]).toBeLessThan(approach[0]);
+    expect(leaving.some((d) => d < -5)).toBe(true);
+    dir.writeRace(snap, 0, 0);
+    // wieder auf der Strecke: entweder außerhalb der Gasse (999) oder weit hinter der Box (Crew längst zurückgezogen)
+    expect(snap[S.pitDBox] === 999 || snap[S.pitDBox] < -24).toBe(true);
     expect(sawLane).toBe(true);
     expect(sawService).toBe(true);
     expect(pl.pitStops).toBe(1);

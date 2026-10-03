@@ -715,5 +715,12 @@ export class RaceDirector {
     out[base + S.pitLimiter] = e.limiter ? 1 : 0;
     out[base + S.pitNext] = COMPOUND_ORDER.indexOf(e.nextCompound);
     out[base + S.pitSvc] = e.pitSvc;
+    // Abstand zur Box für die Crew-Animation: nur innerhalb der Boxengasse gültig
+    const box = this.track.pit.boxes[e.driver % this.track.pit.boxes.length];
+    const rel = this.rel(e.idx);
+    const pz = this.track.pitZone;
+    const veh = this.world.vehicles[e.vi];
+    const inLane = veh && this.track.lateral(e.idx, veh.x, veh.y) > this.track.wl[e.idx] + 0.9 && rel > pz.full0 - 10 && rel < pz.full1 + 10;
+    out[base + S.pitDBox] = e.pit === 3 ? 0 : e.pit >= 2 || inLane ? box.s - rel : 999;
   }
 }

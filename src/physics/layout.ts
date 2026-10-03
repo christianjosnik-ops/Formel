@@ -100,6 +100,7 @@ export const S = {
   pitLimiter: one(), // 1 = Geschwindigkeitsbegrenzer aktiv
   pitNext: one(), // gewählte Mischung (Index)
   pitSvc: one(), // gesamte Standzeit des Boxenstopps [s]
+  pitDBox: one(), // Abstand zur eigenen Box entlang der Gasse [m] (vor der Box +, danach −); 999 = nicht in der Gasse
   wallContact: one(), // Anzahl Kontaktpunkte mit Wand/Fremdkörpern
   contacts: 0, // Anfang des Kontaktfeldes (MAX_CONTACTS * CONTACT_STRIDE)
   dents: 0, // Anfang des Dellenfeldes (MAX_DENTS * DENT_STRIDE)

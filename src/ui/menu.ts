@@ -11,6 +11,7 @@ export interface MenuHooks {
   onTelemetryChanged: () => void;
   onBrakeBias: (bias: number) => void;
   onQualityChanged: () => void;
+  onMainMenu?: () => void;
 }
 
 export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHooks): { toggle: () => void } {
@@ -18,6 +19,19 @@ export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHoo
   const toggle = () => menu.classList.toggle('hidden');
   $('btnMenu').addEventListener('click', toggle);
   $('menuClose').addEventListener('click', toggle);
+  const mtabs = menu.querySelectorAll<HTMLButtonElement>('#menuTabs button');
+  const mpanels = menu.querySelectorAll<HTMLElement>('.scroll section');
+  mtabs.forEach((b) =>
+    b.addEventListener('click', () => {
+      mtabs.forEach((x) => x.classList.toggle('on', x === b));
+      mpanels.forEach((p) => p.classList.toggle('mp-on', p.dataset.mp === b.dataset.mt));
+      menu.querySelector<HTMLElement>('.scroll')!.scrollTop = 0;
+    }),
+  );
+  $('btnMainMenu').addEventListener('click', () => {
+    menu.classList.add('hidden');
+    hooks.onMainMenu?.();
+  });
 
   const persist = () => saveSettings(settings);
   const bindSelect = (id: string, get: () => string, set: (v: string) => void) => {

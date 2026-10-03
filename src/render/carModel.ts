@@ -566,6 +566,11 @@ export class CarModel {
   }
 
   /** Reifenmischung (Farbring der Flanke). */
+  /** Farbe der aktuell aufgezogenen Mischung (für die Boxencrew). */
+  get compoundColor(): THREE.Color {
+    return this.compoundU.value;
+  }
+
   setCompound(id: string): void {
     this.compoundU.value.set(COMPOUND_COLOR[id as keyof typeof COMPOUND_COLOR] ?? '#ffd12e');
   }
