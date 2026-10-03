@@ -11,12 +11,17 @@ export interface AIParams {
   seed: number;
 }
 
-export interface NearCar {
+/** Anderes Auto aus Sicht der KI. */
+export interface Rival {
+  /** Kennung (Fahrzeugindex). */
+  id: number;
   /** Abstand entlang der Strecke [m], >0 = vor mir. */
   gap: number;
   /** Querposition zur Mittellinie (links +). */
   lat: number;
   speed: number;
+  /** Liegengebliebenes/verunfalltes Auto (Hindernis). */
+  wreck: boolean;
 }
 
 export type AIMode = 'hold' | 'race' | 'cooldown';
@@ -44,6 +49,17 @@ export class AIDriver {
   lat = 0; // aktueller Querversatz der Soll-Linie (relativ zur Ideallinie)
   private latTarget = 0;
   private side = 0; // laufendes Überholmanöver: -1 rechts, +1 links
+  /** Aktives Manöver: Angriff (Überholen) oder Verteidigung der Innenlinie. */
+  private man: 'none' | 'attack' | 'defend' = 'none';
+  private manTimer = 0;
+  private manTarget = -1; // Fahrzeug-ID des Angriffsziels
+  private defendCool = 0;
+  private attackCool = 0;
+  /** Gerade laufende Ausweichbewegung (Hindernis/Unfall voraus). */
+  evading = false;
+  private attackBoost = 1;
+  /** Beschreibung der aktuellen Situation für Debug/Tests. */
+  situation = 'free';
   private err = 0;
   private mistake = 0;
   private stuck = 0;
@@ -95,9 +111,13 @@ export class AIDriver {
     this.err = 0;
     this.stuck = 0;
     this.laneBias = 0;
+    this.man = 'none';
+    this.manTimer = 0;
+    this.defendCool = 0;
+    this.evading = false;
   }
 
-  update(dt: number, v: Vehicle, mode: AIMode, ahead: NearCar | null, beside: NearCar | null, level = 1): void {
+  update(dt: number, v: Vehicle, mode: AIMode, rivals: Rival[], level = 1): void {
     const line = this.line;
     const t = line.track;
     const n = line.n;
@@ -125,45 +145,184 @@ export class AIDriver {
     if (this.mistake > 0) this.mistake -= dt;
     else if (this.rnd() < (1 - this.params.consistency) * 0.004 * dt * 60 * 0.12 && speed > 25) this.mistake = 1.4;
 
-    // ---- Überholen / Folgen ----
+    // ---- Rennsituation: Hindernisse, Angriff, Verteidigung, Nebeneinander ----
     const myLat = t.lateral(idx, v.x, v.y);
+    const pathLat = Math.min(Math.max(line.offset[idx] + this.lat, line.lo[idx]), line.hi[idx]);
+    const edgeL = t.wl[idx] - 1.3;
+    const edgeR = -(t.wr[idx] - 1.3);
+    const clampEdge = (x: number) => Math.min(Math.max(x, edgeR), edgeL);
+    const prof = line.speed[(idx + Math.round((speed * 0.3) / t.ds)) % n] * this.params.pace * level;
     let vCap = 1e9;
-    if (ahead && ahead.gap < 55 + speed * 1.6) {
-      const sameLane = Math.abs(ahead.lat - myLat) < 3.3;
-      const prof = line.speed[(idx + Math.round(speed * 0.3 / t.ds)) % n] * this.params.pace * level;
-      if (this.side === 0 && level > 0.9 && ahead.gap < 26 && sameLane && (prof > ahead.speed + 0.3 || ahead.speed < 12) && this.rnd() < 0.05 + 0.6 * this.params.racecraft) {
-        const mid = 0.5 * (line.lo[idx] + line.hi[idx]);
-        this.side = ahead.lat < mid ? 1 : -1;
-      }
-      if (this.side !== 0) {
-        if (ahead.gap < -9 || ahead.gap > 70) this.side = 0;
-        else {
-          const target = ahead.lat + this.side * 3.1;
-          const off = line.offset[idx];
-          this.latTarget = Math.min(Math.max(target, line.lo[idx] - 0.3), line.hi[idx] + 0.3) - off;
+    let tgt = line.offset[idx] + this.laneBias; // gewünschte absolute Querposition (Mittellinien-Koordinate), Standard: Ideallinie (+ Startspur)
+    const gridPhase = Math.abs(this.laneBias) > 0.8;
+    this.situation = 'free';
+    this.evading = false;
+    if (this.defendCool > 0) this.defendCool -= dt;
+    if (this.attackCool > 0) this.attackCool -= dt;
+
+    // nächste Kurve voraus: Abstand zum Bremspunkt und Innenseite
+    let cornerDist = 1e9;
+    let insideSign = 0;
+    {
+      const lim = Math.min(n - 1, Math.round(320 / t.ds));
+      const vNow = Math.max(speed, 30);
+      for (let k = 6; k < lim; k++) {
+        const j = (idx + k) % n;
+        if (line.speed[j] < vNow * 0.82 && Math.abs(line.curv[j]) > 0.004) {
+          cornerDist = k * t.ds;
+          insideSign = Math.sign(line.curv[j]);
+          break;
         }
       }
-      if (this.side === 0) this.latTarget = 0;
-      // Abstandsregelung: im gleichen Streifen nicht auffahren
-      if (sameLane || Math.abs(this.latTarget + line.offset[idx] - ahead.lat) < 2.4) {
-        // sicherer Abstand: aus dem Tempo des Vordermanns mit moderater Verzögerung noch anhaltbar
-        // Sicherer Abstand: der Vordermann kann hart bremsen (0.8 der Bremsgrenze), ich bremse mit 0.5
-        const room = Math.max(0, ahead.gap - 9.5 - 0.1 * speed);
-        const aF = 0.5 * brakeLimit(speed);
-        const aL = 0.8 * brakeLimit(ahead.speed);
-        vCap = Math.sqrt(2 * aF * room + (aF / aL) * ahead.speed * ahead.speed);
-        if (room < 3) vCap = Math.min(vCap, ahead.speed * 0.92);
+    }
+
+    // Kurvenfahrt: dort keine seitlichen Manöver (nur auf Geraden und in der Bremszone)
+    let inCorner = false;
+    {
+      const k1 = Math.max(2, Math.round(30 / t.ds));
+      for (let k = 0; k <= k1; k += 3) if (Math.abs(line.curv[(idx + k) % n]) > 0.0045) inCorner = true;
+    }
+
+    // Rivalen sortieren in Gruppen
+    let front: Rival | null = null; // nächstes lebendes Auto vor mir im Fahrstreifen
+    let rear: Rival | null = null; // nächstes Auto hinter mir im Fahrstreifen
+    let wreck: Rival | null = null; // nächstes Hindernis voraus
+    const alongside: Rival[] = [];
+    for (const r of rivals) {
+      const dLat = Math.min(Math.abs(r.lat - pathLat), Math.abs(r.lat - myLat));
+      if (r.wreck) {
+        if (r.gap > -8 && r.gap < 170 && dLat < 3.4 && (!wreck || r.gap < wreck.gap)) wreck = r;
+        continue;
       }
-    } else {
-      this.side = 0;
-      this.latTarget = 0;
+      if (Math.abs(r.gap) < 7.5 && Math.abs(r.lat - myLat) < 4.2) alongside.push(r);
+      if (r.gap > 0 && r.gap < 110 && dLat < 3.0 && (!front || r.gap < front.gap)) front = r;
+      if (r.gap < -2 && r.gap > -60 && dLat < 3.2 && (!rear || r.gap > rear.gap)) rear = r;
     }
-    if (beside) {
-      // nebeneinander: Platz lassen
-      const d = beside.lat - myLat;
-      if (Math.abs(d) < 3.2) this.latTarget = Math.min(Math.max(this.latTarget - Math.sign(d || 1) * 1.1, -4), 4);
+
+    // 1) Unfall/Hindernis voraus: früh bremsen und die freie Seite wählen
+    if (wreck) {
+      const roomL = edgeL - wreck.lat;
+      const roomR = wreck.lat - edgeR;
+      const sd = Math.abs(wreck.lat - pathLat) < 0.3 ? (roomL >= roomR ? 1 : -1) : Math.sign(pathLat - wreck.lat);
+      if (Math.max(roomL, roomR) > 2.6) tgt = clampEdge(wreck.lat + sd * 3.1);
+      else vCap = Math.min(vCap, 6);
+      const room = Math.max(0, wreck.gap - 16);
+      let vw = Math.sqrt(2 * 0.42 * brakeLimit(speed) * room + 36);
+      // seitlich schon vorbei: mit Schrittgeschwindigkeit weiterfahren statt anzuhalten
+      if (Math.abs(myLat - wreck.lat) > 2.6 && Math.sign(myLat - wreck.lat) === Math.sign(tgt - wreck.lat)) vw = Math.max(vw, 18);
+      vCap = Math.min(vCap, vw);
+      this.evading = true;
+      this.situation = 'evade';
+      this.man = 'none';
     }
-    const rate = 1.7 * dt;
+
+    // 2) Angriff: Auto vor mir im Fahrstreifen, schneller oder im Windschatten
+    if (!this.evading && !gridPhase) {
+      if (this.man === 'attack') {
+        this.manTimer += dt;
+        const tr = rivals.find((r) => r.id === this.manTarget && !r.wreck);
+        if (!tr || tr.gap < -9 || tr.gap > 85 || this.manTimer > 7) {
+          this.man = 'none';
+          this.attackCool = 5;
+          this.defendCool = Math.max(this.defendCool, 2);
+        } else {
+          // Seite und Querabstand zum Ziel halten; vor der Kurve Innenseite bevorzugen
+          const want = clampEdge(tr.lat + this.side * 2.9);
+          // Innenseite verloren (Kante erreicht): Manöver abbrechen
+          if (Math.abs(want - (tr.lat + this.side * 2.9)) > 1.4 && tr.gap > 6) {
+            this.man = 'none';
+          } else {
+            // in der Kurve den Querversatz nur halten, wenn schon nebeneinander (sonst würde die Ideallinie ins Nachbarauto führen)
+            if (!inCorner || Math.abs(tr.gap) < 16) tgt = want;
+            this.situation = 'attack';
+            // spät bremsen, wenn ich schon überlappe und innen liege
+            if (Math.abs(tr.gap) < 8 && this.side * insideSign > 0) this.attackBoost = 1.015;
+          }
+        }
+      } else if (front && level > 0.9 && this.attackCool <= 0 && this.params.racecraft > 0.15 && front.gap < 30 && (cornerDist > 60 || Math.abs(myLat - front.lat) > 2.4)) {
+        const slip = front.gap < 24 && front.speed > 40 && cornerDist > 90 && cornerDist < 330;
+        const faster = (prof > front.speed + 1.2 || front.speed < 14) && speed - front.speed < 9;
+        if ((faster || slip) && this.rnd() < dt * (0.7 + 4 * this.params.racecraft)) {
+          const mid = 0.5 * (edgeL + edgeR);
+          let sd = cornerDist < 300 && insideSign !== 0 ? insideSign : front.lat < mid ? 1 : -1;
+          const fits = (x: number) => Math.abs(clampEdge(front!.lat + x * 2.9) - (front!.lat + x * 2.9)) < 1.0;
+          if (!fits(sd)) sd = -sd;
+          if (fits(sd)) {
+            this.side = sd;
+            this.man = 'attack';
+            this.manTimer = 0;
+            this.manTarget = front.id;
+          }
+        }
+      }
+    }
+    if (this.man !== 'attack') this.attackBoost = 1;
+
+    // 3) Verteidigung: Verfolger dicht hinter mir, vor der nächsten Bremszone die Innenlinie decken (nur ein Schwenk)
+    if (!this.evading && !gridPhase && this.man !== 'attack') {
+      if (this.man === 'defend') {
+        this.manTimer += dt;
+        if (!rear || cornerDist < 35 || speed < 30 || this.manTimer > 6) {
+          this.man = 'none';
+          this.defendCool = 9;
+        } else {
+          const inEdge = insideSign * (insideSign > 0 ? edgeL : -edgeR) * 0.92;
+          if (!inCorner) tgt = clampEdge(insideSign * Math.abs(inEdge));
+          this.situation = 'defend';
+        }
+      } else if (rear && this.defendCool <= 0 && this.params.racecraft > 0.25 && speed > 45 && cornerDist > 70 && cornerDist < 320 && rear.gap > -30 && rear.speed > speed - 2 && this.rnd() < dt * (0.4 + 2.5 * this.params.racecraft)) {
+        // Verfolger auf der Innenseite oder auf der Linie: Innenseite zumachen
+        this.man = 'defend';
+        this.manTimer = 0;
+      }
+    }
+
+    // 4) Nebeneinander: Platz lassen, Außenmann gibt in der Kurve nach
+    for (const r of alongside) {
+      const d = r.lat - tgt;
+      if (Math.abs(d) < 2.7) {
+        const away = r.lat - Math.sign(d || (r.lat >= myLat ? 1 : -1)) * 2.7;
+        tgt = clampEdge(away);
+        if (clampEdge(away) !== away) {
+          // kein Platz: der Hintere nimmt Tempo zurück
+          if (r.gap > 0) vCap = Math.min(vCap, Math.max(10, r.speed * 0.97));
+        }
+      }
+      // Überlappung in der Kurve: liegt der Rivale innen und ist mit der Nase vorn, gebe ich nach
+      if (insideSign !== 0 && cornerDist < 160 && r.gap > 0.5 && (r.lat - myLat) * insideSign > 0.8) {
+        vCap = Math.min(vCap, Math.max(12, r.speed * 0.98));
+        this.situation = 'yield';
+      }
+    }
+
+    // 5) Abstandsregelung zum Vordermann (kein Auffahren, außer ich überhole seitlich versetzt)
+    if (front && !this.evading) {
+      // Abstand halten, solange ich tatsächlich hinter ihm im Streifen bin (auch wenn ich schon ausscheren will)
+      const latOff = Math.min(Math.abs(myLat - front.lat), this.man === 'attack' ? 99 : Math.abs(tgt - front.lat));
+      if (latOff < 2.4) {
+        const attacking = this.man === 'attack';
+        const room = Math.max(0, front.gap - (attacking ? 6.2 : 9.5) - (attacking ? 0.05 : 0.1) * speed);
+        const aF = 0.5 * brakeLimit(speed);
+        const aL = 0.8 * brakeLimit(front.speed);
+        vCap = Math.min(vCap, Math.sqrt(2 * aF * room + (aF / aL) * front.speed * front.speed));
+        if (room < 3) vCap = Math.min(vCap, front.speed * 0.92);
+        if (this.situation === 'free') this.situation = 'follow';
+      }
+    }
+
+    // 6) Kollisionsvermeidung unabhängig von der Absicht: kein Auto in meiner Fahrspur darf in unter ~1,2 s erreicht werden
+    for (const r of rivals) {
+      if (r.wreck || r.gap <= 0 || r.gap > 60) continue;
+      if (Math.min(Math.abs(myLat - r.lat), Math.abs(tgt - r.lat)) < 2.3 && speed > r.speed + 1) {
+        vCap = Math.min(vCap, r.speed + Math.max(0, r.gap - 5.5) / 1.2);
+      }
+    }
+
+    if (this.man === 'none' && !this.evading) this.side = 0;
+    const evadeRate = this.evading ? 3.4 : this.man !== 'none' ? 2.2 : 1.7;
+    const goalAbs = tgt;
+    this.latTarget = clampEdge(goalAbs) - line.offset[idx] - this.laneBias;
+    const rate = evadeRate * dt;
     const goal = this.latTarget + this.laneBias;
     this.lat += Math.min(rate, Math.max(-rate, goal - this.lat));
 
@@ -187,7 +346,7 @@ export class AIDriver {
 
     // ---- Geschwindigkeit ----
     const look = Math.max(1, Math.round((speed * 0.2) / t.ds));
-    let vt = line.speed[(idx + look) % n] * this.params.pace * level * (1 + this.err);
+    let vt = line.speed[(idx + look) % n] * this.params.pace * level * (1 + this.err) * this.attackBoost;
     if (this.mistake > 0) vt *= 1.07;
     // Bahnfehler: bei großer Abweichung zurücknehmen
     const latErr = Math.abs(by);
@@ -201,7 +360,7 @@ export class AIDriver {
     let aReq = 0;
     {
       let dist = 0;
-      const scale = this.params.pace * level * (1 + this.err) * (this.mistake > 0 ? 1.07 : 1);
+      const scale = this.params.pace * level * (1 + this.err) * (this.mistake > 0 ? 1.07 : 1) * this.attackBoost;
       const horizon = Math.min(80, Math.ceil((speed * speed) / (2 * 25) / t.ds) + 12);
       for (let k = 0; k < horizon; k++) {
         const j = (idx + k) % n;

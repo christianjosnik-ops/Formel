@@ -258,10 +258,27 @@ export class Vehicle {
     return 0.7;
   }
 
-  /** Geschwindigkeitsabhängiger maximaler Radlenkwinkel [rad] (Eingabe-Skalierung). */
+  /** Geschätzte Querbeschleunigungsgrenze [m/s^2] bei Geschwindigkeit v (mechanischer Grip + Abtrieb). */
+  gripLimit(speed: number): number {
+    const k = Math.min(1, (speed * speed) / (75 * 75));
+    return PHYS.gravity * (2.1 + 3.0 * k);
+  }
+
+  /**
+   * Geschwindigkeitsabhängiger maximaler Radlenkwinkel [rad] (Eingabe-Skalierung).
+   * Mit Fahrhilfe (Stufe 1/2) entspricht voller Lenkeinschlag etwa der Grenze der Querbeschleunigung des Autos
+   * (Lenkwinkel = Radstand * a_grip / v^2 + Schräglaufreserve): linear und vorhersehbar, bei jedem Tempo gleich viel "Gefühl".
+   * Ohne Hilfe bleibt das rohe, stärker abfallende Verhalten.
+   */
   maxSteerAt(speed: number, level: number): number {
-    const v0 = level === 0 ? 46 : level === 1 ? 26 : 20;
-    return this.cfg.geometry.maxSteer / (1 + (speed * speed) / (v0 * v0));
+    if (level === 0) {
+      const v0 = 46;
+      return this.cfg.geometry.maxSteer / (1 + (speed * speed) / (v0 * v0));
+    }
+    const v = Math.max(speed, 8);
+    const head = level === 1 ? 1.1 : 1.2;
+    const a = Math.min(this.cfg.geometry.maxSteer, ((this.L * this.gripLimit(v)) / (v * v)) * head + 0.03);
+    return a;
   }
 
   /** Ein Physikschritt der Länge dt. Allokationsfrei. */
@@ -290,9 +307,12 @@ export class Vehicle {
     // Gasannahme: Anstieg begrenzt (Drive-by-Wire/Kupplung), Zurücknehmen sofort
     {
       const up = thr - this.thrFilt;
-      const maxUp = 7 * dt;
+      const maxUp = (speed < 25 ? 2.4 : 7) * dt;
       this.thrFilt = up > maxUp ? this.thrFilt + maxUp : thr;
       thr = this.thrFilt;
+      // Start-Kennfeld: im unteren Geschwindigkeitsbereich ist das Moment begrenzt (kein Dauer-Wheelspin)
+      const cap = 0.42 + 0.58 * Math.min(1, speed / 55);
+      if (thr > cap) thr = cap;
     }
 
     // Traktionskontrolle auf Basis des Antriebsschlupfs und der Quergleitwinkel der Hinterräder.
@@ -337,10 +357,14 @@ export class Vehicle {
     // Lenkung: Zielwinkel, optional Gierstabilisierung, Stellgeschwindigkeit
     {
       let cmd = inp.steer < -1 ? -1 : inp.steer > 1 ? 1 : inp.steer;
-      if (inp.steerAssist > 0) cmd = Math.sign(cmd) * Math.pow(Math.abs(cmd), 1.35);
+      if (inp.steerAssist > 0) cmd = Math.sign(cmd) * Math.pow(Math.abs(cmd), 1.15);
       let target = cmd * this.maxSteerAt(speed, inp.steerAssist);
       if (inp.steerAssist > 0 && speed > 8) {
-        const rDes = (speed * Math.tan(target)) / this.L;
+        // gewünschte Gierrate, begrenzt auf die Grip-Grenze (der Assistent schiebt nie über den Grip hinaus)
+        const rMax = (0.95 * this.gripLimit(speed)) / speed;
+        let rDes = (speed * Math.tan(target)) / this.L;
+        if (rDes > rMax) rDes = rMax;
+        else if (rDes < -rMax) rDes = -rMax;
         const gain = inp.steerAssist === 1 ? 0.6 : 1.1;
         let corr = gain * (rDes - this.r) * (this.L / speed);
         // Schleuderschutz (ESP-artig): Gegenlenken in Richtung der Rutschbewegung, sobald der Schwimmwinkel wächst

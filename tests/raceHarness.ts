@@ -28,7 +28,7 @@ export function aiLapTime(mapId: MapId, team: TeamData | null, pace = 1.0): numb
   let crossings = 0;
   let lapStart = 0;
   for (let k = 0; k < 500 * 260; k++) {
-    if (k % 5 === 0) ai.update(0.01, v, time < 0.5 ? 'hold' : 'race', null, null);
+    if (k % 5 === 0) ai.update(0.01, v, time < 0.5 ? 'hold' : 'race', []);
     w.step(0.002);
     time += 0.002;
     const i = t.nearest(v.x, v.y);

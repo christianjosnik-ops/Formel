@@ -3,7 +3,7 @@ import type { Vehicle } from '../physics/vehicle';
 import type { World } from '../physics/world';
 import type { GameMap } from '../world/maps';
 import type { Track } from '../world/track';
-import { AIDriver, type AIMode, type NearCar } from './ai';
+import { AIDriver, type AIMode, type Rival } from './ai';
 import { AI_LEVELS, driverPace, DRIVERS, type DriverData, type TeamData, teamOf, teamPerformance } from './field';
 import { RacingLine } from './line';
 import { PIT } from '../world/track';
@@ -58,6 +58,8 @@ export interface Entrant {
   gapAhead: number;
   gapBehind: number;
   stopped: number;
+  /** Sekunden mit nahezu Stillstand im Rennen (Hindernis-Erkennung für die KI). */
+  slowT: number;
   cpTimes: Float64Array;
   cpNext: number;
   /** Boxenstopp: 0 keiner, 1 angefordert, 2 Boxengasse, 3 Reifenwechsel, 4 Ausfahrt. */
@@ -171,6 +173,7 @@ export class RaceDirector {
         gapAhead: 0,
         gapBehind: 0,
         stopped: 0,
+        slowT: 0,
         cpTimes: new Float64Array((cfg.laps + 3) * this.cpCount).fill(-1),
         cpNext: 0,
         pit: 0,
@@ -269,7 +272,7 @@ export class RaceDirector {
         const v = this.world.vehicles[e.vi];
         v.input.throttle = 0;
         v.input.brake = 1;
-        if (e.ai) e.ai.update(dt, v, 'hold', null, null);
+        if (e.ai) e.ai.update(dt, v, 'hold', []);
       }
       if (elapsed >= this.goAt) {
         this.state = 'racing';
@@ -341,6 +344,9 @@ export class RaceDirector {
       if (v.retired && sp < 2.5) e.stopped += dt;
       else if (!v.retired) e.stopped = Math.max(0, e.stopped - dt);
       if (v.retired && e.stopped > 4 && !e.isPlayer) this.park(e);
+      // Stillstand auf der Strecke (Dreher, Unfall ohne Ausfall): andere weichen aus
+      if (sp < 1.5 && this.state === 'racing' && now > 10 && e.pit === 0 && Math.abs(this.track.lateral(e.idx, v.x, v.y)) < this.track.wl[e.idx]) e.slowT += dt;
+      else e.slowT = Math.max(0, e.slowT - 2 * dt);
     }
 
     // Rangfolge
@@ -417,7 +423,7 @@ export class RaceDirector {
       // Startspur halten, bis die erste Kurve nahe ist
       e.ai.laneBias = e.gridLat * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800) - this.line.offset[e.idx] * Math.max(0, 1 - Math.max(0, e.dist - 150) / 800);
       if (this.pitAI(e, v, dt)) continue;
-      const { ahead, beside } = this.neighbours(e, ents);
+      const rivals = this.neighbours(e, ents);
       const mode: AIMode = e.finished ? 'cooldown' : 'race';
       // Gummiband: Feld bleibt beim Spieler (enges Rad-an-Rad-Rennen); zu weit Zurückliegende holen etwas auf,
       // zu weit Enteilte drosseln. Nur wenige Prozent Tempo, die Physik bleibt unverändert.
@@ -429,7 +435,7 @@ export class RaceDirector {
         if (d < -40) rubber = 1 + Math.min(0.08, ((-d - 40) / 400) * 0.08);
         else if (d > 60) rubber = 1 - Math.min(0.1, ((d - 60) / 400) * 0.1);
       }
-      e.ai.update(dt, v, mode, ahead, beside, startEase * rubber);
+      e.ai.update(dt, v, mode, rivals, startEase * rubber);
       // Streckenposten: festgefahrene KI zurück auf die Linie
       if (e.ai.stuckTime > 7 && !v.retired) {
         const i = (e.idx + 6) % t.n;
@@ -620,31 +626,25 @@ export class RaceDirector {
     return Math.max(0, ref0 - tRef);
   }
 
-  private neighbours(e: Entrant, ents: Entrant[]): { ahead: NearCar | null; beside: NearCar | null } {
+  /** Alle relevanten Autos in der Nähe (-60 m .. +170 m entlang der Strecke) aus Sicht von e. */
+  private neighbours(e: Entrant, ents: Entrant[]): Rival[] {
     const t = this.track;
     const L = t.length;
-    let ahead: NearCar | null = null;
-    let aheadSame: NearCar | null = null;
-    let beside: NearCar | null = null;
-    const me = this.world.vehicles[e.vi];
-    const myLat = t.lateral(e.idx, me.x, me.y);
+    const out: Rival[] = [];
     for (const o of ents) {
       if (o === e || o.out) continue;
       let d = o.dist - e.dist;
       d = ((((d + L / 2) % L) + L) % L) - L / 2;
+      if (d < -60 || d > 170) continue;
       const vo = this.world.vehicles[o.vi];
-      const lat = t.lateral(o.idx, vo.x, vo.y);
       const sp = Math.hypot(vo.u, vo.v);
-      if (d > -6 && d < 6) {
-        if (!beside || Math.abs(d) < Math.abs(beside.gap)) beside = { gap: d, lat, speed: sp };
-      }
-      if (d > 0 && d < 75) {
-        if (!ahead || d < ahead.gap) ahead = { gap: d, lat, speed: sp };
-        // dasselbe Band: dieses Auto bestimmt den Sicherheitsabstand (nicht ein versetztes Auto der Nachbarspur)
-        if (Math.abs(lat - myLat) < 3.4 && (!aheadSame || d < aheadSame.gap)) aheadSame = { gap: d, lat, speed: sp };
-      }
+      const lat = t.lateral(o.idx, vo.x, vo.y);
+      // in der Boxengasse (weit außerhalb der Fahrbahn) kein Hindernis
+      if (o.pit >= 2 && Math.abs(lat) > t.wl[o.idx] + 1) continue;
+      const wreck = vo.retired > 0 || (o.slowT > 3.5 && !o.ai?.evading) || (sp > 3 && sp < 40 && Math.abs(vo.v) > 0.55 * Math.abs(vo.u) + 3);
+      out.push({ id: o.vi, gap: d, lat, speed: sp, wreck });
     }
-    return { ahead: aheadSame ?? ahead, beside };
+    return out;
   }
 
   private slipstream(ranked: Entrant[]): void {
