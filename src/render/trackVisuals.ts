@@ -1278,6 +1278,16 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   const gravelMat = layerMat(gravelTex, 2, { roughness: 1, normalMap: surfaceNormal('gravel'), normalScale: new THREE.Vector2(1.2, 1.2) });
   add(ribbon(t, 0.008, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.kerbL[i] + t.gravelL[i], (i) => t.gravelL[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   add(ribbon(t, 0.008, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
+  // Geharkter Kies: Furchen in Fahrtrichtung als Overlay
+  {
+    const rk = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/gravelrake.png`);
+    rk.wrapS = rk.wrapT = THREE.RepeatWrapping;
+    rk.colorSpace = THREE.SRGBColorSpace;
+    rk.anisotropy = 8;
+    const rakeMat = layerMat(rk, 3, { transparent: true, depthWrite: false, roughness: 1 });
+    add(ribbon(t, 0.0095, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.kerbL[i] + t.gravelL[i], (i) => t.gravelL[i] > 1.5, (i, lat) => [lat / 3.5, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 3.5]), rakeMat, false);
+    add(ribbon(t, 0.0095, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 3.5, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 3.5]), rakeMat, false);
+  }
   // Asphalt
   const asphaltMat = layerMat(asphalt, 3, { roughness: 0.88, color: 0xe4e6ee, normalMap: surfaceNormal('asphalt'), normalScale: new THREE.Vector2(0.7, 0.7) });
   add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i] + t.pitW[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
