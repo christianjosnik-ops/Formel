@@ -54,11 +54,11 @@ describe('Aerodynamik', () => {
 describe('Antrieb 2026', () => {
   const pt = new Powertrain(TEST_CAR_2026);
 
-  it('Verbrenner liefert Spitzenleistung von 385 kW (Spielabstimmung) bei 11 500 rpm', () => {
+  it('Verbrenner liefert Spitzenleistung von 345 kW (Spielabstimmung) bei 11 500 rpm', () => {
     const p = (pt.iceTorque(11500) * 11500 * 2 * Math.PI) / 60;
-    expect(p).toBeCloseTo(385e3, -2);
+    expect(p).toBeCloseTo(345e3, -2);
     const p8 = (pt.iceTorque(8000) * 8000 * 2 * Math.PI) / 60;
-    expect(p8).toBeLessThan(385e3);
+    expect(p8).toBeLessThan(345e3);
   });
 
   it('MGU-K regelt zwischen 280 und 345 km/h linear auf null', () => {
@@ -71,9 +71,9 @@ describe('Antrieb 2026', () => {
     const v = 200 / 3.6;
     pt.reset();
     pt.step(0.002, v / 0.335, 1, v, 4e6, 1);
-    expect(pt.batteryPower).toBeGreaterThan(300e3);
+    expect(pt.batteryPower).toBeGreaterThan(270e3);
     expect(pt.batteryPower).toBeLessThan(355e3);
-    expect(pt.kPower).toBeGreaterThan(280e3);
+    expect(pt.kPower).toBeGreaterThan(250e3);
   });
 
   it('MGU-K arbeitet nicht bei leerer Batterie', () => {

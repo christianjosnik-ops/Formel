@@ -334,15 +334,21 @@ aeroBtn.addEventListener('pointerdown', (e) => {
 
 // ---------------------------------------------------------------- Adaptive Auflösung
 const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-let pixelRatio = maxPixelRatio;
+const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+// Handys starten konservativ (1,5x) und steigern sich, wenn die Bildrate stabil ist
+let pixelRatio = coarse ? Math.min(maxPixelRatio, 1.5) : maxPixelRatio;
 let qualityLocked = settings.quality !== 'auto';
 function applyQuality(): void {
-  visuals.setDetail?.(settings.quality === 'low' ? 0.4 : 1);
+  visuals.setDetail?.(settings.quality === 'low' ? 0.4 : coarse && settings.quality !== 'high' ? 0.65 : 1);
   if (settings.quality === 'high') pixelRatio = maxPixelRatio;
   else if (settings.quality === 'low') pixelRatio = 1;
   bundle.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = settings.quality !== 'low';
   bundle.sun.castShadow = settings.quality !== 'low';
+  bundle.setPost(settings.quality === 'high' || (settings.quality === 'auto' && !coarse));
+  if (settings.quality === 'low') bundle.setShadow(1024, 20);
+  else if (coarse) bundle.setShadow(2048, 28);
+  else bundle.setShadow(3072, 34);
 }
 applyQuality();
 
@@ -405,8 +411,11 @@ let shake = 0;
 let lowCount = 0;
 let highCount = 0;
 
+let debugCam: { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null = null;
+const prof = { jsMs: 0, renderMs: 0, frames: 0, maxDt: 0 };
 function frame(now: number): void {
   requestAnimationFrame(frame);
+  const tFrame = performance.now();
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.1) dt = 0.1;
@@ -442,6 +451,10 @@ function frame(now: number): void {
     updateAi(dt, s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);
+    if (debugCam) {
+      camera.position.set(debugCam.x, debugCam.y, debugCam.z);
+      camera.lookAt(debugCam.lx, debugCam.ly, debugCam.lz);
+    }
     visuals.updateCones(s);
     debris?.update(s);
     effects.setPixelScale(renderer.domElement.height, camera.fov);
@@ -473,7 +486,12 @@ function frame(now: number): void {
       if (autostart) startGame();
     }
   }
-  renderer.render(scene, camera);
+  const tR = performance.now();
+  bundle.render();
+  prof.jsMs += tR - tFrame;
+  prof.renderMs += performance.now() - tR;
+  prof.frames++;
+  prof.maxDt = Math.max(prof.maxDt, dt);
 
   // FPS + adaptive Auflösung
   fpsAcc += dt;
@@ -494,7 +512,10 @@ function frame(now: number): void {
         lowCount = 0;
         highCount = 0;
       }
-      if (lowCount >= 2 && pixelRatio > 1) {
+      if (lowCount >= 2 && bundle.postOn()) {
+        bundle.setPost(false);
+        lowCount = 0;
+      } else if (lowCount >= 2 && pixelRatio > 1) {
         pixelRatio = Math.max(1, pixelRatio - 0.25);
         bundle.setPixelRatio(pixelRatio);
         lowCount = 0;
@@ -519,7 +540,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

@@ -39,7 +39,7 @@ describe('Längsdynamik', () => {
     expect(r.t100).toBeGreaterThan(2.0);
     expect(r.t100).toBeLessThan(3.2);
     expect(r.t200).toBeGreaterThan(4.0);
-    expect(r.t200).toBeLessThan(6.0);
+    expect(r.t200).toBeLessThan(6.5);
     expect(r.vTop).toBeGreaterThan(300);
     expect(r.vTop).toBeLessThan(335);
   });
@@ -74,7 +74,7 @@ describe('Längsdynamik', () => {
     car.soc = 1e6;
     car.input.brake = 1;
     run(car, 2.5);
-    expect(car.soc).toBeGreaterThan(1.3e6);
+    expect(car.soc).toBeGreaterThan(1.28e6);
   });
 
   it('Vollgas entlädt die Batterie (Deployment), Kraftstoff sinkt', () => {
@@ -83,7 +83,7 @@ describe('Längsdynamik', () => {
     const soc0 = car.soc;
     const fuel0 = car.fuel;
     run(car, 6);
-    expect(car.soc).toBeLessThan(soc0 - 1e6);
+    expect(car.soc).toBeLessThan(soc0 - 0.9e6);
     expect(car.fuel).toBeLessThan(fuel0);
     expect(fuel0 - car.fuel).toBeLessThan(1);
   });

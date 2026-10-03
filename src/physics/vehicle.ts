@@ -311,7 +311,7 @@ export class Vehicle {
       this.thrFilt = up > maxUp ? this.thrFilt + maxUp : thr;
       thr = this.thrFilt;
       // Start-Kennfeld: im unteren Geschwindigkeitsbereich ist das Moment begrenzt (kein Dauer-Wheelspin)
-      const cap = 0.42 + 0.58 * Math.min(1, speed / 55);
+      const cap = 0.40 + 0.60 * Math.min(1, speed / 55);
       if (thr > cap) thr = cap;
     }
 
