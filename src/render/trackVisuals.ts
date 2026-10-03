@@ -524,7 +524,7 @@ function addPitMarkings(scene: THREE.Scene, t: Track): void {
   }
 }
 
-function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1): void {
+function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, side: 1 | -1, scenery: SceneryAssets | null = null): void {
   const facade = facadeTexture();
   const fm = new THREE.MeshStandardMaterial({ map: facade, roughness: 0.6, metalness: 0.15, side: THREE.DoubleSide });
   const roof = new THREE.MeshStandardMaterial({ color: 0x9da2a8, roughness: 0.7, side: THREE.DoubleSide });
@@ -540,6 +540,46 @@ function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, si
   // Kommandostand (höherer Aufbau) und Überbau über der Boxenmauer
   const tower = extrudeAlong(t, s0 + 130, s0 + 185, side, (i) => off(i) - 1, [{ a: [0, 6.5], b: [0, 12.5], mat: 0, uvAlong: 40, uvAcross: 14 }, { a: [0, 12.5], b: [11, 12.5], mat: 1, uvAlong: 10, uvAcross: 10 }], [fm, roof]);
   scene.add(tower);
+  // Garagenbuchten aus Blender (Boxencrew, Reifenstapel, Werkzeug, Beleuchtung, Teamfarbe) statt flacher Tore
+  const bayParts = scenery ? scenery.parts('garage_bay') : [];
+  if (bayParts.length) {
+    const order = DRIVERS.map((d) => teamOf(d));
+    const boxes = t.pit.boxes;
+    const bm = new THREE.Matrix4();
+    const bq = new THREE.Quaternion();
+    const bc = new THREE.Color();
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const mats: THREE.Matrix4[] = [];
+    boxes.forEach((b) => {
+      const i = b.idx;
+      const lat = t.wl[i] + off(i) - 3.6;
+      const hx = t.hdg[i];
+      bq.setFromAxisAngle(yAxis, hx);
+      // Ursprung der Bucht = vordere linke Ecke; Mitte der Box liegt bei b.s, Bucht 10,4 m breit
+      const ox = Math.cos(hx) * -5.2;
+      const oy = Math.sin(hx) * -5.2;
+      bm.compose(new THREE.Vector3(t.x[i] + t.nx(i) * side * lat + ox, t.elev[i], -(t.y[i] + t.ny(i) * side * lat + oy)), bq, new THREE.Vector3(1, 1, 1));
+      mats.push(bm.clone());
+    });
+    for (const part of bayParts) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, mats.length);
+      const accent = part.mat.name === 'Accent';
+      mats.forEach((m, k) => {
+        im.setMatrixAt(k, m);
+        if (accent) {
+          const tm = order[Math.min(k, order.length - 1)];
+          bc.set(tm.colors.primary);
+          if (bc.r + bc.g + bc.b < 0.5) bc.set(tm.colors.accent || tm.colors.secondary);
+          im.setColorAt(k, bc);
+        }
+      });
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.computeBoundingSphere();
+      scene.add(im);
+    }
+    return;
+  }
   // Garagentore und Team-Schilder: je Box ein dunkles Tor mit farbigem Band
   const n = t.pit.boxes.length;
   const doors = new THREE.InstancedMesh(new THREE.PlaneGeometry(8.6, 4.2), new THREE.MeshStandardMaterial({ color: 0x5b616b, roughness: 0.75 }), n);
@@ -701,6 +741,62 @@ function addPitWall(scene: THREE.Scene, t: Track): void {
   });
   // Bänder liegen auf der Streckenseite der Mauer: Fläche zeigt zur Strecke (+z lokal)
   scene.add(deck, canopy, posts, screens, frames, bands, boardsGeo);
+
+  // Gummiabrieb und Ölflecken an den Halteplätzen (weiche dunkle Flecken)
+  {
+    const stain = canvasTex(128, 128, (g) => {
+      g.clearRect(0, 0, 128, 128);
+      const rr = mulberry(33);
+      for (let k = 0; k < 7; k++) {
+        const x = 30 + rr() * 68;
+        const y = 30 + rr() * 68;
+        const rad = 14 + rr() * 26;
+        const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+        gr.addColorStop(0, `rgba(8,8,10,${0.28 + rr() * 0.25})`);
+        gr.addColorStop(1, 'rgba(8,8,10,0)');
+        g.fillStyle = gr;
+        g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      }
+    }, false);
+    const stains = new THREE.InstancedMesh(new THREE.PlaneGeometry(5.4, 4.2), new THREE.MeshBasicMaterial({ map: stain, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }), n);
+    const qf = new THREE.Quaternion();
+    boxes.forEach((b, k) => {
+      qf.setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.psi).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2));
+      m4.compose(new THREE.Vector3(b.x, 0.031 + t.elev[b.idx], -b.y), qf, one);
+      stains.setMatrixAt(k, m4);
+    });
+    scene.add(stains);
+  }
+
+  // Leitkegel an Ein- und Ausfahrt der Boxengasse und Ausfahrtsampel (rot) am Mauerende
+  {
+    const coneGeo = new THREE.ConeGeometry(0.17, 0.55, 8);
+    const cones = new THREE.InstancedMesh(coneGeo, new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.7 }), 24);
+    let ci = 0;
+    for (const rs of [wallS0 - 1, wallS1 + 1]) {
+      const i = (Math.round(((rs + t.length) % t.length) / t.ds) + t.n) % t.n;
+      for (let k = 0; k < 12; k++) {
+        const lat = t.wl[i] + 1.2 + k * 1.15;
+        m4.compose(new THREE.Vector3(t.x[i] + t.nx(i) * lat, 0.275 + t.elev[i], -(t.y[i] + t.ny(i) * lat)), new THREE.Quaternion(), one);
+        cones.setMatrixAt(ci++, m4);
+      }
+    }
+    cones.castShadow = true;
+    scene.add(cones);
+    const ie = (Math.round(((wallS1 + 6 + t.length) % t.length) / t.ds) + t.n) % t.n;
+    const lat = t.wl[ie] + 0.9;
+    const px = t.x[ie] + t.nx(ie) * lat;
+    const py = -(t.y[ie] + t.ny(ie) * lat);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.2, 8), std(0x30343a, 0.5, 0.6));
+    pole.position.set(px, 2.1 + t.elev[ie], py);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.35), std(0x15171a, 0.6, 0.3));
+    box.position.set(px, 4.3 + t.elev[ie], py);
+    box.rotation.y = t.hdg[ie];
+    const red = new THREE.Mesh(new THREE.CircleGeometry(0.17, 16), new THREE.MeshBasicMaterial({ color: 0xff2a1a }));
+    red.position.set(px - Math.sin(t.hdg[ie]) * 0.19, 4.65 + t.elev[ie], py - Math.cos(t.hdg[ie]) * 0.19);
+    red.rotation.y = t.hdg[ie] + Math.PI;
+    scene.add(pole, box, red);
+  }
 }
 
 function addGantry(scene: THREE.Scene, t: Track): void {
@@ -1077,7 +1173,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   const pitS1 = t.pitZone.box0 + 22 * 11 + 4;
   const leftS0 = Math.max(20, pitS1 + 25);
   addGrandstand(scene, t, leftS0, leftS0 + 180, 1, scenery);
-  addPitBuilding(scene, t, pitS0, pitS1, 1);
+  addPitBuilding(scene, t, pitS0, pitS1, 1, scenery);
   // Kurventribünen außen an den engsten Kurven, Streckenposten und Flutlichtmasten
   const stands: Array<{ s0: number; s1: number; side: 1 | -1 }> = [
     { s0: -330, s1: -60, side: -1 },
