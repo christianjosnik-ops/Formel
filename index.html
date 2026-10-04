@@ -116,19 +116,28 @@
       <header>
         <div class="logo">FORMEL<b>2026</b></div>
         <nav id="mmTabs">
-          <button data-tab="mode" class="on">Modus</button>
-          <button data-tab="track">Strecke</button>
-          <button data-tab="team">Team</button>
-          <button data-tab="garage">Werkstatt</button>
-          <button data-tab="opts">Einstellungen</button>
+          <button data-tab="mode" class="on"><i>🏁</i>Spiel</button>
+          <button data-tab="track"><i>🗺</i>Strecke</button>
+          <button data-tab="team"><i>👤</i>Team</button>
+          <button data-tab="garage"><i>🔧</i>Karriere</button>
+          <button data-tab="opts"><i>🎮</i>Fahren</button>
         </nav>
       </header>
       <main id="mmBody">
-        <section data-panel="mode" class="panel-on"><div class="cards" id="modeCards"></div></section>
+        <section data-panel="mode" class="panel-on">
+          <div class="setup">
+            <div class="setupMain">
+              <div class="seg modeSeg" id="modeSeg"></div>
+              <p id="modeText"></p>
+              <div id="setupGroups"></div>
+            </div>
+            <aside class="setupSide" id="sideCard"></aside>
+          </div>
+        </section>
         <section data-panel="track"><div class="cards" id="trackCards"></div></section>
         <section data-panel="team"><div id="teamGrid"></div><div id="driverInfo"></div></section>
-        <section data-panel="garage"><div id="garageHead"></div><div class="cards" id="garageCards"></div></section>
-        <section data-panel="opts"><div class="optGrid" id="optGrid"></div></section>
+        <section data-panel="garage"><div id="seasonBox"></div><div id="garageHead"></div><div class="cards" id="garageCards"></div></section>
+        <section data-panel="opts"><div id="optGroups"></div></section>
       </main>
       <footer>
         <div id="mmSummary"></div>
@@ -137,45 +146,65 @@
     </div>
   </div>
 
-  <!-- Menü -->
+  <!-- Menü im Spiel -->
   <div id="menu" class="panel hidden">
+    <div class="menuHead">
+      <h2>Einstellungen</h2>
+      <button id="menuClose" aria-label="Schließen">✕</button>
+    </div>
+    <nav id="menuTabs">
+      <button data-mt="drive" class="on">Fahren</button>
+      <button data-mt="car">Auto</button>
+      <button data-mt="view">Anzeige</button>
+      <button data-mt="race">Rennen</button>
+    </nav>
     <div class="scroll">
-      <h2>Einstellungen <button id="menuClose">✕</button></h2>
-
-      <h3>Strecke</h3>
-      <div class="row"><label>Strecke</label><select id="selMap"></select></div>
-      <p class="muted">Der Wechsel lädt die Seite neu.</p>
-
-      <h3>Steuerung</h3>
-      <div class="row">
-        <label>Lenkung</label>
-        <select id="selControl"><option value="arrows">Pfeiltasten (rechts lenken, links Gas/Bremse)</option><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung (iPad/iPhone)</option></select>
-      </div>
-      <div class="row" id="rowTilt">
-        <button id="btnTilt">Neigung aktivieren</button>
-        <span id="tiltState" class="muted"></span>
-      </div>
-      <div class="row"><label>Neigung: voller Lenkeinschlag</label><input id="rngTilt" type="range" min="20" max="60" step="1" /><span id="valTilt" class="muted"></span></div>
-      <div class="row"><label>Neigung invertieren</label><input id="chkTiltInv" type="checkbox" /></div>
-      <p class="muted">Gamepad wird automatisch erkannt (Sticks/Trigger). Tastatur: Pfeile/WASD, X Aero, R Reset, C Kamera, T Telemetrie.</p>
-
-      <h3>Fahrhilfen</h3>
-      <div class="row"><label>Traktionskontrolle</label><select id="selTc"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
-      <div class="row"><label>ABS</label><select id="selAbs"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
-      <div class="row"><label>Lenkhilfe</label><select id="selSteer"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
-      <p class="muted">Die Physik bleibt identisch, Hilfen filtern nur die Eingaben.</p>
-
-      <h3>Fahrzeug</h3>
-      <div class="row"><label>Team</label><select id="selTeam"></select></div>
-      <div class="row"><label>Reifen</label><select id="selCompound"><option value="soft">Soft</option><option value="medium">Medium</option><option value="hard">Hard</option><option value="inter">Intermediate</option><option value="wet">Wet</option></select></div>
-      <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
-
-      <h3>Anzeige</h3>
-      <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="tcam">T-Cam (Airbox)</option><option value="cockpit">Cockpit</option><option value="nose">Frontflügel</option><option value="tv">TV-Regie</option><option value="side">Streckenrand tief</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
-      <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
-      <div class="row"><label>Lautstärke</label><input id="rngVol" type="range" min="0" max="100" step="5" /><span id="valVol" class="muted"></span></div>
-      <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
-      <p class="muted" id="buildInfo"></p>
+      <section data-mp="drive" class="mp-on">
+        <h3>Steuerung</h3>
+        <div class="row">
+          <label>Lenkung</label>
+          <select id="selControl"><option value="arrows">Pfeiltasten (rechts lenken, links Gas/Bremse)</option><option value="touch">Touch-Lenkband</option><option value="tilt">Neigung (iPad/iPhone)</option></select>
+        </div>
+        <div class="row" id="rowTilt">
+          <button id="btnTilt">Neigung aktivieren</button>
+          <span id="tiltState" class="muted"></span>
+        </div>
+        <div class="row"><label>Neigung: voller Lenkeinschlag</label><input id="rngTilt" type="range" min="20" max="60" step="1" /><span id="valTilt" class="muted"></span></div>
+        <div class="row"><label>Neigung invertieren</label><input id="chkTiltInv" type="checkbox" /></div>
+        <p class="muted">Gamepad wird automatisch erkannt. Tastatur: Pfeile/WASD, X Aero, R Reset, C Kamera, T Telemetrie.</p>
+        <h3>Fahrhilfen</h3>
+        <div class="row"><label>Traktionskontrolle</label><select id="selTc"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+        <div class="row"><label>ABS</label><select id="selAbs"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+        <div class="row"><label>Lenkhilfe</label><select id="selSteer"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+        <div class="row"><label>Ideallinie</label><select id="selLine"><option value="0">Aus</option><option value="1">Ein (grün Gas · rot Bremsen)</option></select></div>
+        <p class="muted">Die Physik bleibt identisch, Hilfen filtern nur die Eingaben.</p>
+        <h3>Boxenstopp</h3>
+        <div class="row"><label>Ablauf</label><select id="selPit"><option value="1">Automatik (BOX-Knopf genügt)</option><option value="0">Manuell fahren</option></select></div>
+        <p class="muted">Der BOX-Knopf unten meldet den Stopp an; die Reifenmischung wählst du daneben (S/M/H).</p>
+      </section>
+      <section data-mp="car">
+        <h3>Fahrzeug</h3>
+        <div class="row"><label>Team</label><select id="selTeam"></select></div>
+        <div class="row"><label>Reifen</label><select id="selCompound"><option value="soft">Soft</option><option value="medium">Medium</option><option value="hard">Hard</option><option value="inter">Intermediate</option><option value="wet">Wet</option></select></div>
+        <div class="row"><label>Bremsbalance vorne</label><input id="rngBias" type="range" min="50" max="68" step="0.5" /><span id="valBias" class="muted"></span></div>
+      </section>
+      <section data-mp="view">
+        <h3>Anzeige</h3>
+        <div class="row"><label>Kamera</label><select id="selCam"><option value="chase">Verfolger</option><option value="tcam">T-Cam (Airbox)</option><option value="cockpit">Cockpit</option><option value="nose">Frontflügel</option><option value="tv">TV-Regie</option><option value="side">Streckenrand tief</option><option value="heli">Hubschrauber</option><option value="showroom">Showroom</option></select></div>
+        <div class="row"><label>Grafik</label><select id="selQuality"><option value="auto">Automatisch (60 FPS)</option><option value="high">Hoch</option><option value="low">Niedrig</option></select></div>
+        <div class="row"><label>Wetter / Licht</label><select id="selWeather"><option value="sunny">Sonnig</option><option value="overcast">Bewölkt</option><option value="evening">Abendlicht</option></select></div>
+        <div class="row"><label>Lautstärke</label><input id="rngVol" type="range" min="0" max="100" step="5" /><span id="valVol" class="muted"></span></div>
+        <div class="row"><label>Telemetrie</label><input id="chkTelemetry" type="checkbox" /></div>
+      </section>
+      <section data-mp="race">
+        <h3>Strecke</h3>
+        <div class="row"><label>Strecke</label><select id="selMap"></select></div>
+        <p class="muted">Der Wechsel lädt die Seite neu.</p>
+        <h3>Rennen</h3>
+        <p class="muted">Distanz, Gegner, Startplatz und Reifenregeln stellst du im Hauptmenü ein.</p>
+        <div class="row"><button id="btnMainMenu">☰ Zum Hauptmenü</button></div>
+        <p class="muted" id="buildInfo"></p>
+      </section>
     </div>
   </div>
 

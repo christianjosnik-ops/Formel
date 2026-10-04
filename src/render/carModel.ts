@@ -302,6 +302,9 @@ export class CarModel {
   private readonly tmp = new THREE.Vector3();
   readonly livery: Livery;
   readonly wheelPos: THREE.Vector3[] = [];
+  /** Boxenstopp: Auto auf den Wagenhebern (Höhe in m) und ausgebaute Räder. */
+  serviceLift = 0;
+  readonly serviceHide: boolean[] = [false, false, false, false];
   /** Geometrie-Vorlagen für Trümmerteile (aus demselben Modell). */
   readonly debrisTemplates: { wheel: THREE.Group; wingFront: THREE.Object3D; wingRear: THREE.Object3D };
 
@@ -506,7 +509,7 @@ export class CarModel {
   /** Aktualisiert Transformationen und Schadensdarstellung aus einem (interpolierten) Snapshot. */
   update(snap: Float64Array, dt: number, ground = 0, tilt = 0): void {
     const cfg = this.cfg;
-    this.root.position.set(snap[S.x], ground, -snap[S.y]);
+    this.root.position.set(snap[S.x], ground + this.serviceLift, -snap[S.y]);
     this.root.rotation.set(0, snap[S.psi], tilt);
     this.pivot.position.y = cfg.geometry.cgHeight - snap[S.heave];
     // Nick: positiv = Nase tiefer -> Rotation um z negativ; Wanken: positiv = rechts tiefer -> Rotation um x positiv.
@@ -514,7 +517,7 @@ export class CarModel {
 
     for (let i = 0; i < 4; i++) {
       const off = snap[S.wheelOff + i] > 0.5;
-      this.wheelRoots[i].visible = !off;
+      this.wheelRoots[i].visible = !off && !this.serviceHide[i];
       if (off) continue;
       this.spinAngle[i] -= snap[S.omega + i] * dt;
       this.wheelSpin[i].rotation.z = this.spinAngle[i];
@@ -563,6 +566,11 @@ export class CarModel {
   }
 
   /** Reifenmischung (Farbring der Flanke). */
+  /** Farbe der aktuell aufgezogenen Mischung (für die Boxencrew). */
+  get compoundColor(): THREE.Color {
+    return this.compoundU.value;
+  }
+
   setCompound(id: string): void {
     this.compoundU.value.set(COMPOUND_COLOR[id as keyof typeof COMPOUND_COLOR] ?? '#ffd12e');
   }

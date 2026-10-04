@@ -36,3 +36,19 @@ Jede KI bekommt von `RaceDirector.neighbours` eine Liste aller Autos im Bereich 
 ## Fahrgefühl (v2)
 
 Mit Fahrhilfe (Stufe 1/2) entspricht voller Lenkeinschlag der Grip-Grenze des Autos (`Vehicle.maxSteerAt`/`gripLimit`), die Assist-Gierrate wird auf den Grip begrenzt. Beschleunigung: 0–100 km/h ≈ 2,4 s, 0–200 ≈ 5,3 s, 0–300 ≈ 11 s (Start-Kennfeld begrenzt das Moment bei niedrigem Tempo, MGU-K-Abregelung ab 280 km/h).
+
+## Boxenstopp (Automatik und Animation)
+
+- **Boxen-Automatik** (Einstellung "Boxenstopp", Standard an): Ein Druck auf BOX (Taste P) genügt. Hinter der Boxeneinfahrt übernimmt die Boxen-KI (`RaceDirector.pitAI` mit `pitDriver`) das Auto: Einfahrt mit 80 km/h, Halt in der eigenen Box, Reifenwechsel, Ausfahrt. Danach hat der Spieler wieder die Kontrolle. "Manuell" fährt wie bisher selbst. Bei verschlissenen Reifen (>72 %) blinkt ein Hinweis.
+- **Animation** (`src/render/pitCrew.ts`, Modell `public/models/pitcrew.glb` aus `tools/make_pitcrew.py`): 18 gegliederte Mechaniker (Overall in Teamfarbe, Helm mit Visier, Handschuhe, Stiefel) folgen dem Ablauf eines echten F1-Stopps – Anlauf aus der Garage (rechte Seite um Nase bzw. Heck herum), Wagenheber vorn/hinten, je Rad Schrauber / Rad ab / Rad an, zwei Frontflügel-Einsteller, Heck-Stabilisierer, Feuerlöscher, Handzeichen, Freigabe und Rückzug. Die Posen entstehen in Blender per Zwei-Gelenk-IK (Hände greifen Radmutter, Reifen, Wagenheber-Griff, Flügel), die Animation ist ein 5-s-Clip, der im Spiel nicht abgespielt, sondern gescrubbt wird: Anlauf nach Abstand zur Box (`S.pitDBox`, 30 m), Service nach Standzeit (`pitTimer/pitSvc`, 2,6 s Nennablauf), Rückzug nach Abstand hinter der Box (24 m). Die Leerobjekte `CarLift` und `WheelVis_*` im Clip steuern `CarModel.serviceLift/serviceHide`; die neue Mischung (Farbring) erscheint beim Aufsetzen des Rades. Beim Spieler blendet eine Boxen-Kamera zur Nahansicht über. Neu erzeugen: `python tools/make_pitcrew.py public/models/pitcrew.glb` (Blender-`bpy`).
+
+## Menüs
+
+- **Hauptmenü** (`src/ui/start.ts`, Reiter Spiel · Strecke · Team · Karriere · Fahren): Im Reiter *Spiel* wählt man oben den Modus (Rennen / Rennwochenende / Freies Fahren) und darunter in Gruppen per Auswahlfeldern *Rennen* (Distanz, Gegner, Starterfeld, Startplatz), *Boxenstopp & Reifen* (Automatik/Manuell, Startreifen, Verschleiß) und *Regeln* (Streckenlimits). Rechts zeigt die Übersichtskarte Strecke mit Streckenverlauf, Renndistanz in km, Gegner, Start, Boxenstopp und einen Strategie-Hinweis. *Karriere* zeigt Guthaben, Statistik (Rennen, Siege, Podien, Bestplatz, Ausbau) und die Werkstatt-Upgrades. *Fahren* enthält Fahrhilfen, Steuerung und Grafik.
+- **Menü im Spiel** (`#menu`, `src/ui/menu.ts`): Reiter Fahren (Steuerung, Fahrhilfen, Boxenstopp) · Auto (Team, Reifen, Bremsbalance) · Anzeige (Kamera, Grafik, Ton, Telemetrie) · Rennen (Strecke, Zurück zum Hauptmenü).
+
+## Saison, Ideallinie, Wetter
+
+- **Saison** (`src/season.ts`, Modus „Saison“): Drei Läufe (Monza, Spa, Silverstone), jeweils Qualifying + Rennen. Punkte 25-18-15-12-10-8-6-4-2-1, Ausfälle punktlos; Fahrer- und Teamwertung, Siege und Verlauf des Spielers werden im Browser gespeichert und im Reiter *Karriere* angezeigt (Neue Saison jederzeit möglich). Die Strecke ist durch den Kalender vorgegeben; nach dem Rennen führt „Weiter“ ins Hauptmenü zum nächsten Lauf.
+- **Ideallinie** (`src/render/racingLineVis.ts`, Einstellung „Fahrlinie“): Band entlang der KI-Ideallinie, nach dem Geschwindigkeitsprofil eingefärbt (grün Gas, gelb lupfen, orange/rot bremsen, 70 m Vorschau).
+- **Wetter/Licht** (`createScene().setWeather`, Himmel aus `tools/make_sky.py … sunny|overcast|evening`): Sonnig, Bewölkt (weiches Licht, nahe Dunstgrenze), Abendlicht (tiefe warme Sonne, lange Schatten). Die Physik bleibt unverändert (kein Regen).

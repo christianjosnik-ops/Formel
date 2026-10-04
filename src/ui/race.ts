@@ -30,9 +30,13 @@ export class RaceHud {
   private lastLap = 0;
   kind: 'race' | 'quali' = 'race';
   onQuali: (best: number) => void = () => {};
-  onFinish: (pos: number, n: number, dnf: boolean) => string = () => '';
+  onFinish: (pos: number, n: number, dnf: boolean, order: Array<{ driver: number; out: boolean }>) => string = () => '';
+  /** Beschriftung des Weiter-Knopfs nach dem Rennen (Saison: nächster Lauf). */
+  againLabel = 'Neues Rennen';
   private physics: PhysicsClient | null = null;
   prizeText = '';
+  /** Boxen-Automatik aktiv (aus den Einstellungen). */
+  pitAuto = true;
   private want = false;
   private wantAt = 0;
   private cmp: CompoundId = 'medium';
@@ -124,7 +128,8 @@ export class RaceHud {
       this.banner('');
       if (q) this.onQuali(me[S.raceBest]);
       else {
-        this.prizeText = this.onFinish(me[S.racePos] | 0, n, me[S.raceOut] > 0.5 || (me[S.raceFinished] < 0.5 && me[S.retired] > 0.5));
+        const order = this.rows(physics, n).map((r) => ({ driver: r[S.raceDriver] | 0, out: r[S.raceOut] > 0.5 }));
+        this.prizeText = this.onFinish(me[S.racePos] | 0, n, me[S.raceOut] > 0.5 || (me[S.raceFinished] < 0.5 && me[S.retired] > 0.5), order);
         this.results(physics, n);
       }
     }
@@ -167,13 +172,24 @@ export class RaceHud {
     const next = COMPOUND_ORDER[me[S.pitNext] | 0] ?? this.cmp;
     document.querySelectorAll<HTMLButtonElement>('#cmpSel button').forEach((b) => b.classList.toggle('on', b.dataset.c === (this.want ? this.cmp : next)));
     const msg = $('pitMsg');
-    if (st === 1) msg.textContent = 'BOX BOX – Einfahrt links vor der Start/Ziel-Geraden';
-    else if (st === 3) msg.textContent = `REIFENWECHSEL ${me[S.pitTimer].toFixed(1)} s`;
-    else if (st === 4 && this.stopsSeen !== me[S.pitStops]) {
+    let wmax = 0;
+    for (let i = 0; i < 4; i++) wmax = Math.max(wmax, me[S.tyreWear + i]);
+    const nextName = (COMPOUND_ORDER[me[S.pitNext] | 0] ?? this.cmp).toUpperCase();
+    if (st === 1) msg.textContent = this.pitAuto ? 'BOX BOX – die Automatik übernimmt an der Boxeneinfahrt' : 'BOX BOX – Einfahrt links vor der Start/Ziel-Geraden';
+    else if (st === 2) msg.textContent = 'BOXENEINFAHRT – Automatik fährt in deine Box';
+    else if (st === 3) msg.textContent = `REIFENWECHSEL ${me[S.pitTimer].toFixed(1)} s · ${nextName}`;
+    else if (st === 4 && this.pitAuto) {
+      if (this.stopsSeen !== me[S.pitStops]) {
+        this.stopsSeen = me[S.pitStops];
+        this.say('LOS!', 1.5);
+      }
+      msg.textContent = 'BOXENAUSFAHRT – Automatik';
+    } else if (st === 4 && this.stopsSeen !== me[S.pitStops]) {
       this.stopsSeen = me[S.pitStops];
       this.say('LOS!', 1.5);
       msg.textContent = '';
     } else if (me[S.pitLimiter] > 0.5) msg.textContent = 'BOXENGASSE 80 km/h – halte in deiner Box';
+    else if (st === 0 && wmax > 0.72 && Math.floor(performance.now() / 600) % 2 === 0) msg.textContent = 'REIFEN ABGENUTZT – BOX drücken (Taste P)';
     else msg.textContent = '';
     if (st === 1) this.want = true;
     else if (this.want && performance.now() - this.wantAt > 600) this.want = false;
@@ -239,7 +255,7 @@ export class RaceHud {
     }
     $('resTitle').textContent = 'Ergebnis';
     $('resPrize').textContent = this.prizeText;
-    $('resAgain').textContent = 'Neues Rennen';
+    $('resAgain').textContent = this.againLabel;
     $('resList').innerHTML = `<div class="rrow"><span></span><span></span><span></span><span>Abstand</span><span>Beste</span></div>${html}`;
     $('results').classList.remove('hidden');
   }

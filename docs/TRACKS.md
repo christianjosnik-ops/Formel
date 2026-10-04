@@ -56,3 +56,9 @@ Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientiere
 - Das Gelände hat jetzt deutliches Relief (breite Hügelzüge, Rollen, unregelmäßige Erdwälle hinter den Auslaufzonen); Gitterweite 28 m.
 - Bäume: voll detaillierte Blender-Bäume direkt an der Strecke (≤ 320 Stück), dahinter Blender-LOD-Bäume (~250 Flächen) in 450-m-Chunks mit Frustum-Culling; Dichte per `setDetail`.
 - Tribünenmodul (12 m): zwei Ränge mit Einzelsitzen, Mittelgang mit Handläufen, Querweg, Werbebanden, Publikum (Textur mit Armen/Fahnen), Fachwerkdach, Rückwand mit Verkleidung und Stützen.
+
+## Grafik-Update (Kino-Look)
+
+- **Nachbearbeitung** (`src/render/scene.ts`, ein Shader-Pass nach Bloom): radiale Bewegungsunschärfe ab ~130 km/h, leichte chromatische Aberration, Filmkorn (in Schatten stärker), Sonnenglanz mit schwachem Objektiv-Geist, Farbgrading (Grün entsättigt Richtung Oliv, Schatten kühl, Lichter warm; je Wetter eigene Werte).
+- **Bäume** (`tools/make_scenery.py`): Laubblatt-Cluster aus ~1900 echten Blättern (Mittelrippe, Seitenadern, gezähnter Rand, innen dunkel/außen hell, 1024²) und Nadelzweige mit Seitenzweigen, tausenden feinen Nadeln und deckender Unterlage (damit sie in Mipmaps nicht verschwinden). Weiche Kontaktschatten unter jedem Baum (`trackVisuals.ts`), da die Schattenkarte nur das Umfeld des Autos abdeckt.
+- **Zuschauer**: Schattierung nach oben, Stoffkorn, dunkle Kontur je Figur. **Asphalt**: geringere Rauheit für Himmelsreflexe unter flachem Blick.

@@ -170,7 +170,7 @@ export class PhysicsClient {
     let dpsi = b[base + S.psi] - a[base + S.psi];
     dpsi -= Math.round(dpsi / (2 * Math.PI)) * 2 * Math.PI;
     v[S.psi] = a[base + S.psi] + dpsi * t;
-    for (const f of [S.gear, S.absActive, S.tcActive, S.retired, S.crashLevel, S.raceLap, S.racePos, S.raceFinished, S.raceOut, S.raceDriver, S.raceBest, S.raceLast, S.raceState, S.raceLights, S.raceLaps, S.raceFinishTime, S.raceGapLeader, S.raceGapAhead, S.raceGapBehind])
+    for (const f of [S.gear, S.absActive, S.tcActive, S.retired, S.crashLevel, S.raceLap, S.racePos, S.raceFinished, S.raceOut, S.raceDriver, S.raceBest, S.raceLast, S.raceState, S.raceLights, S.raceLaps, S.raceFinishTime, S.raceGapLeader, S.raceGapAhead, S.raceGapBehind, S.pitState, S.pitTimer, S.pitSvc, S.pitDBox, S.pitNext, S.pitStops])
       v[f] = b[base + f];
     return v;
   }

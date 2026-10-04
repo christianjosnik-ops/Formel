@@ -97,43 +97,140 @@ def draw_ellipse(arr, cx, cy, rx, ry, ang, color, alpha=1.0):
     sub[m, 3] = alpha
 
 
+def draw_leaf(arr, cx, cy, length, width, ang, color, vein=0.16, edge=1.18, serrate=0.0):
+    """Echtes Blatt: spitz zulaufende Form, Mittelrippe, Seitenadern, hellerer Rand, leicht gezähnt."""
+    h, w, _ = arr.shape
+    R = int(length + width + 3)
+    x0, x1 = int(max(0, cx - R)), int(min(w, cx + R))
+    y0, y1 = int(max(0, cy - R)), int(min(h, cy + R))
+    if x1 <= x0 or y1 <= y0:
+        return
+    ys, xs = np.mgrid[y0:y1, x0:x1]
+    dx, dy = xs - cx, ys - cy
+    ca, sa = math.cos(ang), math.sin(ang)
+    u = (dx * ca + dy * sa) / length + 0.5            # 0..1 entlang des Blatts (Stiel bei 0)
+    v = (-dx * sa + dy * ca) / (width * 0.5)          # -1..1 quer
+    prof = np.where((u > 0) & (u < 1), np.sin(np.clip(u, 0, 1) ** 0.75 * math.pi) ** 0.9 * (1 - 0.25 * u), 0)
+    if serrate:
+        prof = prof * (1 + serrate * np.sin(u * 60))
+    m = np.abs(v) < prof
+    if not m.any():
+        return
+    sub = arr[y0:y1, x0:x1]
+    col = np.array(color, np.float32)
+    edge_k = np.clip(np.abs(v) / np.maximum(prof, 1e-3), 0, 1)
+    k = 0.92 + (edge - 0.92) * edge_k ** 2 * 0.9
+    # Seitenadern (schräg zur Rippe) und Mittelrippe
+    veins = np.abs(np.sin((u * 13.0 - np.abs(v) * 1.7) * math.pi)) ** 14
+    rib = np.exp(-(v / 0.07) ** 2)
+    shade = k * (1 - vein * 0.55 * veins * (np.abs(v) < prof * 0.92)) + rib * 0.22
+    px = np.clip(col[None, None, :] * shade[..., None], 0, 1)
+    sub[m, :3] = px[m]
+    sub[m, 3] = 1.0
+
+
 def foliage_broad():
-    w = h = 512
+    """Laubblatt-Cluster 1024x1024: hunderte echte Blätter, innen dunkel (Selbstverschattung), außen im Licht."""
+    w = h = 1024
     arr = np.zeros((h, w, 4), np.float32)
     r = random.Random(11)
-    greens = [(0.20, 0.36, 0.12), (0.26, 0.46, 0.15), (0.17, 0.30, 0.10), (0.34, 0.54, 0.18), (0.22, 0.40, 0.13), (0.42, 0.55, 0.16)]
-    lobes = [0.55 + r.random() * 0.4 for _ in range(8)]
-    for _ in range(1500):
+    greens = [(0.15, 0.30, 0.08), (0.21, 0.40, 0.10), (0.12, 0.26, 0.07), (0.30, 0.48, 0.12), (0.18, 0.35, 0.09), (0.38, 0.50, 0.12), (0.26, 0.38, 0.09)]
+    lobes = [0.5 + r.random() * 0.5 for _ in range(7)]
+    leaves = []
+    for _ in range(1900):
         ang = r.random() * math.tau
         lob = lobes[int(ang / math.tau * len(lobes)) % len(lobes)]
-        rad = math.sqrt(r.random()) * 232 * lob
-        cx, cy = w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.92
+        rad = (r.random() ** 0.72) * 460 * lob
+        leaves.append((rad, ang))
+    leaves.sort(key=lambda t: t[0])          # innen zuerst: äußere Blätter überdecken die inneren
+    for rad, ang in leaves:
+        cx, cy = w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.94
         c = greens[r.randrange(len(greens))]
-        k = 0.8 + 0.4 * r.random()
-        draw_ellipse(arr, cx, cy, 15 + r.random() * 16, 7 + r.random() * 7, r.random() * math.tau, (c[0] * k, c[1] * k, c[2] * k))
+        depth = 0.45 + 0.7 * (rad / 470) ** 0.8          # innen dunkler
+        k = depth * (0.85 + 0.3 * r.random())
+        # Blätter zeigen vom Zentrum weg, mit Streuung
+        la = ang + r.uniform(-1.0, 1.0)
+        L = 46 + r.random() * 34
+        draw_leaf(arr, cx, cy, L, L * r.uniform(0.42, 0.58), la, (c[0] * k, c[1] * k, c[2] * k), serrate=0.025)
+    # vereinzelt gelbliche Blätter (Sonnenlicht, Herbstansatz)
+    for _ in range(26):
+        ang = r.random() * math.tau
+        rad = 200 + r.random() * 200
+        draw_leaf(arr, w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.94, 60, 32, ang + r.uniform(-1, 1), (0.52, 0.52, 0.12))
     return arr
 
 
+def draw_line(arr, x0, y0, x1, y1, rad, color, alpha=1.0):
+    h, w, _ = arr.shape
+    n = int(max(abs(x1 - x0), abs(y1 - y0)) * 1.5) + 2
+    col = np.array(color, np.float32)
+    for i in range(n):
+        t = i / (n - 1)
+        x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        xi0, xi1 = int(max(0, x - rad - 1)), int(min(w, x + rad + 2))
+        yi0, yi1 = int(max(0, y - rad - 1)), int(min(h, y + rad + 2))
+        if xi1 <= xi0 or yi1 <= yi0:
+            continue
+        ys, xs = np.mgrid[yi0:yi1, xi0:xi1]
+        m = (xs - x) ** 2 + (ys - y) ** 2 <= rad * rad
+        sub = arr[yi0:yi1, xi0:xi1]
+        sub[m, :3] = col
+        sub[m, 3] = alpha
+
+
 def foliage_needle():
-    w = h = 512
+    """Nadelzweig 1024x1024: Zweigachse mit Seitenzweigen und tausenden feinen Nadeln, innen dunkler."""
+    w = h = 1024
     arr = np.zeros((h, w, 4), np.float32)
     r = random.Random(13)
-    greens = [(0.07, 0.20, 0.10), (0.10, 0.27, 0.14), (0.06, 0.17, 0.09), (0.14, 0.32, 0.17)]
-    # Zweig als Fächer: Mittelachse horizontal, Nadeln seitlich
-    for _ in range(2000):
-        t = r.random()
-        x = 20 + t * 470
-        spread = (1 - t * 0.55) * 120
-        y = h / 2 + (r.random() - 0.5) * 2 * spread * (0.4 + 0.6 * r.random())
-        ang = (-0.9 if y < h / 2 else 0.9) * (0.5 + 0.5 * r.random()) + (r.random() - 0.5) * 0.4
-        c = greens[r.randrange(4)]
-        k = 0.85 + 0.35 * r.random()
-        draw_ellipse(arr, x, y, 22 + r.random() * 16, 2.3 + r.random() * 1.6, ang, (c[0] * k, c[1] * k, c[2] * k))
-    # Zweigachse
-    for xx in range(15, 495):
-        yy = int(h / 2 + math.sin(xx / 70) * 4)
-        arr[yy - 2:yy + 3, xx, :3] = (0.22, 0.15, 0.08)
-        arr[yy - 2:yy + 3, xx, 3] = 1
+    greens = [(0.09, 0.27, 0.12), (0.13, 0.36, 0.17), (0.08, 0.23, 0.10), (0.19, 0.44, 0.21), (0.14, 0.32, 0.14)]
+    cy = h / 2
+
+    def axis_y(x):
+        return cy + math.sin(x / 140.0) * 9
+
+    def twig(xs, ys, ang, length, depth):
+        x1, y1 = xs + math.cos(ang) * length, ys + math.sin(ang) * length
+        # Unterlage: dichte dunkle Nadelmasse, damit der Zweig auch in der Ferne (Mipmaps) deckend bleibt
+        draw_ellipse(arr, (xs + x1) / 2, (ys + y1) / 2, length * 0.52, (34 if depth == 0 else 27), ang, (0.05, 0.15, 0.07))
+        # Nadeln entlang der Achse: dicht, schräg nach vorn, beidseitig
+        n = int(length * 1.7)
+        for i in range(n):
+            t = i / n
+            px, py = xs + (x1 - xs) * t, ys + (y1 - ys) * t
+            side = 1 if r.random() < 0.5 else -1
+            na = ang + side * (0.75 + r.random() * 0.55)
+            nl = (20 + r.random() * 20) * (1 - 0.35 * t) * (1.0 if depth == 0 else 0.8)
+            c = greens[r.randrange(len(greens))]
+            k = (0.55 + 0.6 * (0.3 + 0.7 * t)) * (0.85 + 0.3 * r.random()) * (0.9 if depth else 1.0)
+            draw_line(arr, px, py, px + math.cos(na) * nl, py + math.sin(na) * nl, 1.6, (c[0] * k, c[1] * k, c[2] * k))
+        draw_line(arr, xs, ys, x1, y1, 1.8, (0.20, 0.13, 0.07))
+        return x1, y1
+
+    # Hauptzweig mit Seitenzweigen links/rechts
+    xe, ye = twig(30, cy, 0.0, 940, 0)
+    for i in range(14):
+        t = 0.08 + i * 0.062
+        px, py = 30 + 940 * t, axis_y(30 + 940 * t) * 0 + cy
+        for side in (-1, 1):
+            a = side * (0.7 + r.random() * 0.25)
+            twig(px, py, a, 200 * (1 - t * 0.55) * (0.8 + 0.4 * r.random()), 1)
+    return arr
+
+
+def fence_texture():
+    """Maschendraht (Rautenmuster) mit Alpha: Drahtdicke so, dass auch Mipmaps noch Deckung behalten."""
+    n = 256
+    arr = np.zeros((n, n, 4), np.float32)
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+    cell = 64.0
+    d1 = np.abs(((xs + ys) % cell) - cell / 2)
+    d2 = np.abs(((xs - ys) % cell) - cell / 2)
+    wire = np.minimum(d1, d2)
+    m = wire > (cell / 2 - 5.0)
+    arr[..., :3] = np.array([0.62, 0.65, 0.68], np.float32)
+    arr[..., :3] *= (0.85 + 0.25 * np.clip((xs % cell) / cell, 0, 1))[..., None]
+    arr[..., 3] = m.astype(np.float32)
     return arr
 
 
@@ -197,7 +294,15 @@ def crowd_texture():
                 ax = x + side * sx * 0.54
                 rect(ax - 4, ax + 4, base + 8, base + torso_h * 0.6, tuple(np.clip(np.array(sh) * 0.9, 0, 1)))
         x += sx * (0.82 + r.random() * 0.35)
-    arr[..., :3] *= 0.92
+    # Plastizität: Oberkörper/Köpfe oben im Licht, unten in der Sitzreihe verschattet, dazu Stoffkorn und weiche Kanten
+    yy = np.linspace(0, 1, h)[:, None]
+    shade = 0.58 + 0.5 * np.clip(yy * 1.25, 0, 1) ** 0.9
+    grain = 0.92 + 0.16 * value_noise(w, h, 3, 77)
+    arr[..., :3] = np.clip(arr[..., :3] * (shade * grain)[..., None] * 0.95, 0, 1)
+    # dunkle Kontur um jede Figur (trennt nebeneinander sitzende Personen)
+    a = arr[..., 3]
+    edge = (a > 0.5) & ((np.roll(a, 1, 0) < 0.5) | (np.roll(a, -1, 0) < 0.5) | (np.roll(a, 1, 1) < 0.5) | (np.roll(a, -1, 1) < 0.5))
+    arr[edge, :3] *= 0.55
     return arr
 
 
@@ -325,6 +430,7 @@ img_seat = make_image('seat', seat_texture())
 img_roof = make_image('roof', roof_texture())
 img_clad = make_image('cladding', cladding_texture())
 img_ad = make_image('ad', ad_texture())
+img_fence = make_image('fence', fence_texture())
 
 
 # ----------------------------------------------------------------------------------------------
@@ -390,6 +496,7 @@ M_SEAT = mat_image('Seat', img_seat, rough=0.55, vc=True)
 M_ROOF = mat_image('Roof', img_roof, rough=0.5)
 M_WALL = mat_image('Cladding', img_clad, rough=0.5)
 M_AD = mat_image('Ad', img_ad, rough=0.6)
+M_FENCE = mat_image('CatchFence', img_fence, alpha=True, rough=0.5)
 M_DARK = mat_color('Dark', (0.08, 0.09, 0.1), rough=0.8)
 
 
@@ -640,7 +747,7 @@ def conifer(name, seed, height=18.0, trunk_r=0.28, width=3.2, lod=False):
             # zwei Karten pro Zweig: leicht gegeneinander verdreht (Fächer von oben und von der Seite)
             for tw in (0.0, 1.0):
                 nrm = (tangent * (1 - tw) + Vector((0, 0, 1)) * (0.9 * tw + 0.15)).normalized()
-                add_card(b, center, (length * (1.3 if lod else 1), length * (1.0 if lod else 0.75)), nrm, axis, M_NEEDLE, (shade, shade, shade))
+                add_card(b, center, (length * (1.3 if lod else 1), length * (1.5 if lod else 1.45)), nrm, axis, M_NEEDLE, (shade, shade, shade))
     ob = b.finish()
     finish_smooth_foliage(ob, cc, 2.2)
     return ob
@@ -840,7 +947,7 @@ def crowd_row(b, xa, xb, y, z, seed):
 
 def grandstand_module(name, L=12.0):
     b = Builder(name)
-    for m in (M_CONC, M_SEAT, M_CROWD, M_AD, M_STEEL, M_ROOF, M_WALL):
+    for m in (M_CONC, M_SEAT, M_CROWD, M_AD, M_STEEL, M_ROOF, M_WALL, M_FENCE, M_VC):
         b.mat_index(m)
     run, rise = 0.80, 0.38
     aisle_x, aisle_w = L / 2, 1.3
@@ -878,6 +985,18 @@ def grandstand_module(name, L=12.0):
         beam(b, (x, -0.25, 1.15), (x, -0.25, 2.0), 0.05, 0.05, M_STEEL)
     beam(b, (L / 2, -0.25, 2.0), (L / 2, -0.25, 2.0 + 0.001), L, 0.06, M_STEEL)
     beam(b, (L / 2, -0.25, 1.6), (L / 2, -0.25, 1.6 + 0.001), L, 0.04, M_STEEL)
+
+    # Fangzaun vor der Tribüne: hohe Pfosten mit zur Tribüne geneigtem Ausleger, Maschendraht, Querholme
+    fz1 = 6.3
+    for k in range(int(L / 2) + 1):
+        x = k * 2.0
+        beam(b, (x, -0.25, 1.15), (x, -0.25, fz1), 0.09, 0.09, M_STEEL)
+        beam(b, (x, -0.25, fz1), (x, 0.95, fz1 + 0.6), 0.06, 0.06, M_STEEL)
+        beam(b, (x, -0.25, fz1 - 1.5), (x, 0.55, fz1 + 0.0), 0.04, 0.04, M_STEEL)
+    for zr in (1.6, 3.7, fz1):
+        beam(b, (L / 2, -0.25, zr), (L / 2, -0.25, zr + 0.001), L, 0.05, M_STEEL)
+    quad_uv(b, [(0, -0.27, 1.2), (L, -0.27, 1.2), (L, -0.27, fz1), (0, -0.27, fz1)], M_FENCE, (1, 1, 1), [(0, 0), (L * 0.8, 0), (L * 0.8, 5.1 * 0.8), (0, 5.1 * 0.8)])
+    quad_uv(b, [(0, -0.24, fz1), (L, -0.24, fz1), (L, 0.95, fz1 + 0.6), (0, 0.95, fz1 + 0.6)], M_FENCE, (1, 1, 1), [(0, 0), (L * 0.8, 0), (L * 0.8, 1.2), (0, 1.2)])
 
     z0 = 0.9
     z_low_top, y_low_end = tier('low', 0.0, z0, 14)
@@ -924,6 +1043,20 @@ def grandstand_module(name, L=12.0):
     for k in range(3):
         x = (k + 0.5) * L / 3
         box2(b, x - 0.3, y_front + 1.4, zr_front - 0.95, x + 0.3, y_front + 1.9, zr_front - 0.6, M_STEEL)
+    # Flaggen am Dachrand (Trikoloren), Fahnenstange mit leicht gewelltem Tuch
+    flags = [((0.0, 0.5, 0.2), (0.95, 0.95, 0.95), (0.8, 0.1, 0.1)), ((0.1, 0.1, 0.1), (0.85, 0.1, 0.1), (0.95, 0.75, 0.1)), ((0.15, 0.2, 0.6), (0.95, 0.95, 0.95), (0.8, 0.1, 0.1)), ((0.95, 0.95, 0.95), (0.1, 0.25, 0.65), (0.95, 0.95, 0.95))]
+    fr = random.Random(int(L * 100))
+    for xf in (L * 0.18, L * 0.52, L * 0.86):
+        fc = flags[fr.randrange(len(flags))]
+        zb = zr_front + 0.5
+        yb = y_front + 0.6
+        beam(b, (xf, yb, zb), (xf, yb, zb + 3.6), 0.05, 0.05, M_STEEL)
+        fw, fh = 1.8, 1.15
+        for si in range(3):
+            xa = xf + 0.04 + si * fw / 3
+            xb2 = xa + fw / 3
+            wob = lambda t_: 0.12 * math.sin(t_ * 5 + xf)
+            quad_uv(b, [(xa, yb + wob(xa), zb + 3.6 - fh), (xb2, yb + wob(xb2), zb + 3.6 - fh), (xb2, yb + wob(xb2), zb + 3.6), (xa, yb + wob(xa), zb + 3.6)], M_VC, fc[si], [(0, 0), (1, 0), (1, 1), (0, 1)])
     proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0, M_WALL: 4.0})
     return b.finish()
 
@@ -1046,6 +1179,389 @@ def garage_bay(name, L=10.4, D=3.6, Hh=5.0):
     return b.finish()
 
 
+
+# ----------------------------------------------------------------------------------------------
+# Bodendetails: Blumen, Kieselsteine; Hintergrund: Hecke, Scheune, Haus, Schuppen, Silo, Strommast
+# ----------------------------------------------------------------------------------------------
+
+def plank_texture():
+    w, h = 256, 256
+    n = value_noise(w, h, 8, 301)
+    cols = np.arange(w)[None, :]
+    board = (cols % 32) / 32.0
+    gap = (board < 0.06).astype(np.float32)
+    grain = value_noise(w, h, 3, 302) * 0.18
+    shade = 0.5 + 0.25 * n + grain - 0.35 * gap
+    shade *= 0.85 + 0.3 * value_noise(32, 1, 1, 303)[0][(np.arange(w) // 32) % 32][None, :]
+    img = np.zeros((h, w, 4), np.float32)
+    img[..., 0] = shade
+    img[..., 1] = shade * 0.88
+    img[..., 2] = shade * 0.74
+    img[..., 3] = 1
+    return np.clip(img, 0, 1)
+
+
+def tile_texture():
+    w, h = 256, 256
+    r = np.random.default_rng(311)
+    img = np.zeros((h, w, 4), np.float32)
+    rows, cols = 8, 8
+    th, tw = h // rows, w // cols
+    for ry in range(rows):
+        for cx in range(cols):
+            x0 = cx * tw + (tw // 2 if ry % 2 else 0)
+            shade = 0.42 + 0.22 * r.random()
+            for dy in range(th):
+                for dx in range(tw):
+                    xx = (x0 + dx) % w
+                    yy = ry * th + dy
+                    edge = 0.55 if (dx < 1 or dy > th - 3) else 1.0
+                    img[yy, xx, :3] = (shade * 1.05 * edge, shade * 0.62 * edge, shade * 0.5 * edge)
+    img[..., 3] = 1
+    img[..., :3] *= 0.9 + 0.2 * value_noise(w, h, 6, 312)[..., None]
+    return np.clip(img, 0, 1)
+
+
+M_PLANK = mat_image('Planks', make_image('planks', plank_texture()), rough=0.9, vc=True)
+M_TILE = mat_image('Tiles', make_image('tiles', tile_texture()), rough=0.8, vc=True)
+
+
+def flower_patch(name, seed, petal, centre=(0.95, 0.75, 0.1), stems=9):
+    r = random.Random(seed)
+    b = Builder(name)
+    bm = b.bm
+    mi = b.mat_index(M_GRASS)
+    col = bm.loops.layers.color.new('Col')
+
+    def face(pts, cols):
+        f = bm.faces.new([bm.verts.new(p) for p in pts])
+        f.material_index = mi
+        for li, c in zip(f.loops, cols):
+            li[col] = (*c, 1)
+
+    for _ in range(stems):
+        a = r.random() * math.tau
+        rad = r.random() * 0.22
+        x0, y0 = math.cos(a) * rad, math.sin(a) * rad
+        h = r.uniform(0.22, 0.42)
+        lean = r.uniform(-0.05, 0.05)
+        w = 0.008
+        face([(x0 - w, y0, 0), (x0 + w, y0, 0), (x0 + w + lean, y0, h), (x0 - w + lean, y0, h)], [(0.06, 0.15, 0.04), (0.06, 0.15, 0.04), (0.2, 0.4, 0.1), (0.2, 0.4, 0.1)])
+        # Kopf: sechs Blütenblätter + Mitte
+        hx, hy, hz = x0 + lean, y0, h
+        pr = r.uniform(0.035, 0.055)
+        pc = tuple(min(1.0, c * r.uniform(0.9, 1.1)) for c in petal)
+        for k in range(6):
+            a0 = k / 6 * math.tau
+            a1 = (k + 1) / 6 * math.tau
+            face([(hx, hy, hz), (hx + math.cos(a0) * pr, hy + math.sin(a0) * pr, hz + 0.004), (hx + math.cos((a0 + a1) / 2) * pr * 1.15, hy + math.sin((a0 + a1) / 2) * pr * 1.15, hz + 0.006), (hx + math.cos(a1) * pr, hy + math.sin(a1) * pr, hz + 0.004)], [centre, pc, pc, pc])
+        # Blätter am Stängel
+        for lz in (0.3, 0.6):
+            la = r.random() * math.tau
+            face([(x0, y0, h * lz), (x0 + math.cos(la) * 0.07, y0 + math.sin(la) * 0.07, h * lz + 0.02), (x0 + math.cos(la) * 0.1, y0 + math.sin(la) * 0.1, h * lz), (x0 + math.cos(la) * 0.07, y0 + math.sin(la) * 0.07, h * lz - 0.01)], [(0.12, 0.3, 0.06)] * 4)
+    return b.finish()
+
+
+def pebbles(name, seed):
+    r = random.Random(seed)
+    b = Builder(name)
+    bm = b.bm
+    mi = b.mat_index(M_VC)
+    col = bm.loops.layers.color.new('Col')
+    uv = bm.loops.layers.uv.verify()
+    for _ in range(9):
+        rad = r.uniform(0.03, 0.09)
+        ax, ay = r.uniform(-0.45, 0.45), r.uniform(-0.45, 0.45)
+        res = bmesh.ops.create_icosphere(bm, subdivisions=1, radius=rad)
+        verts = res['verts']
+        sc = (r.uniform(0.9, 1.4), r.uniform(0.8, 1.2), r.uniform(0.45, 0.7))
+        g = r.uniform(0.28, 0.6)
+        tint = (g * r.uniform(0.95, 1.1), g * r.uniform(0.9, 1.05), g * r.uniform(0.82, 1.0))
+        for v in verts:
+            v.co.x = v.co.x * sc[0] + ax
+            v.co.y = v.co.y * sc[1] + ay
+            v.co.z = v.co.z * sc[2] + rad * 0.3
+        fs = {f for v in verts for f in v.link_faces}
+        for f in fs:
+            f.material_index = mi
+            for li in f.loops:
+                li[col] = (*tint, 1)
+                li[uv].uv = (0, 0)
+    return b.finish()
+
+
+def hedge(name, seed, length=8.0):
+    r = random.Random(seed)
+    b = Builder(name)
+    # dichte Blattkarten in einem abgerundeten Quader, innen dunkle Zweige
+    for _ in range(int(length * 11)):
+        x = r.uniform(0, length)
+        a = r.random() * math.tau
+        rr = r.random() ** 0.5 * 0.65
+        c = Vector((x, math.cos(a) * rr, 0.45 + r.random() * 1.2 * (1 - 0.5 * (rr / 0.65) ** 2)))
+        shade = 0.5 + 0.5 * min(1, c.z / 1.5) + r.uniform(-0.08, 0.08)
+        add_card(b, c, (0.85, 0.8), Vector((r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(0, 1))), Vector((0, 0, 1)), M_LEAF, (shade * 0.9, shade, shade * 0.85))
+    ob = b.finish()
+    finish_smooth_foliage(ob, Vector((length / 2, 0, 0.6)))
+    return ob
+
+
+def gable(b, x0, y0, x1, y1, z0, rise, over, mat, tile=2.0, color=(1, 1, 1)):
+    """Satteldach über Rechteck, First entlang x. Zwei Dachflächen (zweiseitig) plus Giebelwände."""
+    ym = (y0 + y1) / 2
+    ya, yb = y0 - over, y1 + over
+    xa, xb = x0 - over, x1 + over
+    zr = z0 + rise
+    zeave = z0 - rise * (over / ((y1 - y0) / 2))
+    for (ys, zs, ye, ze) in ((ya, zeave, ym, zr), (yb, zeave, ym, zr)):
+        L = math.hypot(ye - ys, ze - zs)
+        quad_uv(b, [(xa, ys, zs), (xb, ys, zs), (xb, ye, ze), (xa, ye, ze)], mat, color, [(0, 0), ((xb - xa) / tile, 0), ((xb - xa) / tile, L / tile), (0, L / tile)])
+    uvl, coll = _layers(b)
+    for xg in (x0, x1):
+        f = b.bm.faces.new([b.bm.verts.new(p) for p in ((xg, y0, z0), (xg, y1, z0), (xg, ym, zr))])
+        f.material_index = b.mat_index(M_VC)
+        for li in f.loops:
+            li[coll] = (0.88, 0.85, 0.78, 1)
+            li[uvl].uv = (0, 0)
+
+
+def building(name, L, D, Hh, rise, wall_mat, wall_col, windows=True, chimney=False, seed=1):
+    r = random.Random(seed)
+    b = Builder(name)
+    for m in (M_VC, M_PLANK, M_TILE, M_DARK, M_CONC):
+        b.mat_index(m)
+    box2(b, 0, 0, 0, L, D, Hh, wall_mat, wall_col)
+    gable(b, 0, 0, L, D, Hh, rise, 0.5, M_TILE, 2.0, (1, 1, 1))
+    if windows:
+        nwin = max(2, int(L / 3.2))
+        for k in range(nwin):
+            x = (k + 0.5) * L / nwin
+            for z in ((1.2, 2.5) if Hh > 4.5 else (1.3, 2.4)):
+                box2(b, x - 0.45, -0.04, z, x + 0.45, 0.02, z + 1.1, M_DARK)
+                box2(b, x - 0.5, -0.06, z - 0.05, x + 0.5, -0.02, z, M_VC, (0.92, 0.92, 0.9))
+    # Tür
+    box2(b, L * 0.5 - 0.5, -0.05, 0, L * 0.5 + 0.5, 0.03, 2.1, M_PLANK, (0.7, 0.6, 0.5))
+    if chimney:
+        box2(b, L * 0.7, D * 0.4, Hh + rise * 0.3, L * 0.7 + 0.6, D * 0.4 + 0.6, Hh + rise + 1.2, M_VC, (0.55, 0.28, 0.22))
+    proj_uv(b, {M_CONC: 3.0})
+    return b.finish()
+
+
+def barn(name):
+    b = Builder(name)
+    L, D, Hh = 18.0, 10.0, 5.0
+    for m in (M_VC, M_PLANK, M_TILE, M_DARK):
+        b.mat_index(m)
+    box2(b, 0, 0, 0, L, D, Hh, M_PLANK, (1.5, 0.75, 0.55))
+    gable(b, 0, 0, L, D, Hh, 3.4, 0.6, M_TILE, 2.2, (0.7, 0.7, 0.72))
+    # große Tore
+    box2(b, L / 2 - 1.8, -0.05, 0, L / 2 + 1.8, 0.04, 4.0, M_PLANK, (0.9, 0.6, 0.45))
+    box2(b, L / 2 - 0.04, -0.07, 0, L / 2 + 0.04, 0.0, 4.0, M_DARK)
+    for x in (2.0, 4.5, L - 4.5, L - 2.0):
+        box2(b, x - 0.4, -0.04, 2.8, x + 0.4, 0.03, 3.6, M_DARK)
+    return b.finish()
+
+
+def silo(name):
+    b = Builder(name)
+    cyl(b, 0, 0, 0, 12, 2.2, M_CONC, (0.8, 0.8, 0.78), 16)
+    cyl(b, 0, 0, 12, 12.3, 2.3, M_STEEL, (0.6, 0.62, 0.65), 16)
+    box2(b, -2.2, -0.2, 0, 2.2, 0.2, 0.1, M_CONC)
+    proj_uv(b, {M_CONC: 3.0})
+    return b.finish()
+
+
+def pylon(name, H=38.0):
+    b = Builder(name)
+    top_w, base_w = 1.4, 6.0
+    levels = 7
+    legs = [(sx, sy) for sx in (-1, 1) for sy in (-1, 1)]
+
+    def hw(z):
+        return top_w + (base_w - top_w) * (1 - z / H) ** 1.2
+    prev = None
+    for k in range(levels + 1):
+        z = H * k / levels
+        w = hw(z) / 2
+        pts = [(sx * w, sy * w, z) for (sx, sy) in legs]
+        if prev:
+            for (p, q) in zip(prev, pts):
+                beam(b, p, q, 0.22, 0.22, M_STEEL, (0.62, 0.64, 0.66), side=(1, 0, 0))
+            # Diagonalen auf den vier Seiten
+            for i in range(4):
+                j = (i + 1) % 4
+                beam(b, prev[i], pts[j], 0.1, 0.1, M_STEEL, (0.6, 0.62, 0.64), side=(1, 0, 0))
+        prev = pts
+        # Querverband
+        for i in range(4):
+            j = (i + 1) % 4
+            beam(b, pts[i], pts[j], 0.1, 0.1, M_STEEL, (0.6, 0.62, 0.64), side=(1, 0, 0))
+    # Querträger mit Isolatoren
+    for zc, span in ((H * 0.86, 5.6), (H * 0.7, 4.6), (H * 0.55, 3.6)):
+        beam(b, (-span, 0, zc), (span, 0, zc), 0.2, 0.2, M_STEEL, (0.6, 0.62, 0.64), side=(0, 1, 0))
+        for sx in (-span, span):
+            cyl(b, sx, 0, zc - 1.6, zc, 0.12, M_VC, (0.8, 0.85, 0.8), 6)
+    return b.finish()
+
+
+
+# ----------------------------------------------------------------------------------------------
+# Boxengasse komplett: Garageneinheit (Gebäude + Innenraum + Crew), Kommandostand, Ampel, Schild
+# ----------------------------------------------------------------------------------------------
+
+M_GLASS = mat_color('Glass', (0.25, 0.4, 0.55), rough=0.15, metal=0.2)
+
+
+def pit_garage(name, L=11.0, D=16.0, H1=5.2, H2=3.0):
+    """Eine Box: y=0 Front zur Boxengasse, +y nach hinten, x entlang der Strecke (Länge L)."""
+    b = Builder(name)
+    for m in (M_CONC, M_STEEL, M_ROOF, M_WALL, M_DARK, M_ACCENT, M_LIGHT, M_VC, M_GLASS):
+        b.mat_index(m)
+    T = 0.25
+    # Bodenplatte und Innenboden (Teamfarbe, dunkel)
+    box2(b, 0, 0, -0.05, L, D, 0.02, M_CONC, (0.7, 0.7, 0.72))
+    box2(b, 0.3, 0.6, 0.02, L - 0.3, D - 0.6, 0.045, M_ACCENT, (0.55, 0.55, 0.55))
+    # Rückwand und Trennwände
+    box2(b, 0, D - T, 0, L, D, H1 + H2, M_CONC, (0.9, 0.9, 0.92))
+    box2(b, 0, 0, 0, 0.12, D, H1 + H2, M_ROOF, (1, 1, 1))
+    box2(b, L - 0.12, 0, 0, L, D, H1 + H2, M_ROOF, (1, 1, 1))
+    # Decke Erdgeschoss mit Leuchtbändern, Dach mit Brüstung
+    box2(b, 0, 0, H1, L, D, H1 + 0.3, M_CONC, (0.85, 0.85, 0.88))
+    for k in range(5):
+        y = 1.6 + k * 2.7
+        box2(b, 1.0, y, H1 - 0.04, L - 1.0, y + 0.35, H1, M_LIGHT)
+    box2(b, 0, 0, H1 + H2, L, D, H1 + H2 + 0.25, M_CONC, (0.8, 0.8, 0.82))
+    box2(b, 0, -0.1, H1 + H2 + 0.25, L, 0.1, H1 + H2 + 0.85, M_ROOF)      # Attika vorne
+    box2(b, 0, D - 0.1, H1 + H2 + 0.25, L, D + 0.1, H1 + H2 + 0.85, M_ROOF)
+    box2(b, -0.1, 0, H1 + H2 + 0.25, 0.1, D, H1 + H2 + 0.85, M_ROOF)
+    box2(b, L - 0.1, 0, H1 + H2 + 0.25, L + 0.1, D, H1 + H2 + 0.85, M_ROOF)
+    # Dachaufbauten: Klimageräte
+    for (x, y) in ((2.0, 5.0), (6.5, 7.5)):
+        box2(b, x, y, H1 + H2 + 0.25, x + 2.0, y + 1.4, H1 + H2 + 1.35, M_STEEL, (0.75, 0.77, 0.8))
+        cyl(b, x + 1.0, y + 0.7, H1 + H2 + 1.35, H1 + H2 + 1.45, 0.45, M_DARK, (0.15, 0.15, 0.17), 10)
+    # Fassade Erdgeschoss: Pfeiler, Sturz mit Teamband, Rolltor halb offen
+    box2(b, 0, -0.35, 0, 0.7, 0.2, H1, M_CONC, (0.92, 0.92, 0.94))
+    box2(b, L - 0.7, -0.35, 0, L, 0.2, H1, M_CONC, (0.92, 0.92, 0.94))
+    box2(b, 0, -0.35, H1 - 1.1, L, 0.2, H1 + 0.3, M_ACCENT, (1, 1, 1))
+    box2(b, 0.7, -0.2, H1 - 1.15, L - 0.7, 0.0, H1 - 1.1, M_STEEL, (0.55, 0.57, 0.6))
+    cyl(b, 0.9, H1 - 1.45, 0.75, L - 0.75, 0.2, M_STEEL, (0.8, 0.82, 0.85), 10, axis='x')
+    for k in range(4):
+        box2(b, 0.75, 0.05, H1 - 1.55 - k * 0.16, L - 0.75, 0.1, H1 - 1.4 - k * 0.16, M_STEEL, (0.7, 0.72, 0.75))
+    # Balkon und Verglasung Obergeschoss
+    z0 = H1 + 0.3
+    box2(b, 0, -1.5, z0 - 0.1, L, 0, z0 + 0.1, M_CONC, (0.8, 0.8, 0.82))
+    for k in range(7):
+        x = 0.15 + k * (L - 0.3) / 6
+        beam(b, (x, -1.45, z0 + 0.1), (x, -1.45, z0 + 1.1), 0.05, 0.05, M_STEEL, (0.85, 0.87, 0.9))
+    beam(b, (L / 2, -1.45, z0 + 1.1), (L / 2, -1.45, z0 + 1.101), L, 0.06, M_STEEL, (0.85, 0.87, 0.9))
+    box2(b, 0.1, 0.0, z0 + 0.1, L - 0.1, 0.1, z0 + H2 - 0.1, M_GLASS)
+    for k in range(6):
+        x = k * L / 5
+        box2(b, x - 0.06, -0.05, z0 + 0.1, x + 0.06, 0.12, z0 + H2 - 0.1, M_STEEL, (0.9, 0.92, 0.95))
+    # Innenraum: Regale links (Reifen auf Gestellen), Werkbank, Bildschirmwand, Werkzeugwagen
+    for lvl in range(3):
+        box2(b, 0.3, 6.0, 0.35 + lvl * 0.9, 1.3, 11.5, 0.4 + lvl * 0.9, M_STEEL, (0.6, 0.62, 0.65))
+        for k in range(5):
+            cyl(b, 0.8, 6.5 + k * 1.0, 0.4 + lvl * 0.9, 0.4 + lvl * 0.9 + 0.3, 0.36, M_VC, (0.05, 0.05, 0.06), 10)
+            cyl(b, 0.8, 6.5 + k * 1.0, 0.4 + lvl * 0.9 + 0.02, 0.4 + lvl * 0.9 + 0.28, 0.2, M_VC, (0.55, 0.57, 0.6), 8)
+    for (x, y) in ((L - 1.4, 6.5), (L - 1.4, 8.3)):
+        box2(b, x - 0.5, y - 0.45, 0.1, x + 0.5, y + 0.45, 0.95, M_ACCENT, (0.9, 0.9, 0.9))
+        box2(b, x - 0.5, y - 0.45, 0.95, x + 0.5, y + 0.45, 1.02, M_STEEL)
+    # Bildschirmwand an der Rückwand
+    for sx in (2.0, 4.6, 7.2, 9.4):
+        box2(b, sx - 0.8, D - T - 0.1, 2.3, sx + 0.8, D - T, 3.4, M_DARK)
+        box2(b, sx - 0.74, D - T - 0.12, 2.36, sx + 0.74, D - T - 0.1, 3.34, M_LIGHT, (0.45, 0.7, 1.0))
+    # Teamband innen an der Rückwand
+    box2(b, 0.12, D - T - 0.05, 0.0, L - 0.12, D - T, 1.3, M_ACCENT, (0.8, 0.8, 0.8))
+    # Schreibtisch mit Laptops
+    box2(b, 3.0, D - 1.6, 0.0, 8.0, D - T - 0.05, 0.9, M_STEEL, (0.8, 0.82, 0.85))
+    for x in (3.6, 4.8, 6.0, 7.2):
+        box2(b, x - 0.25, D - 1.3, 0.9, x + 0.25, D - 0.95, 0.93, M_DARK)
+        box2(b, x - 0.25, D - 0.97, 0.93, x + 0.25, D - 0.95, 1.2, M_DARK)
+    # Auto-Platz: Wagenheber und Reifenstapel vorn
+    for (tx, ty) in ((1.0, 2.0), (L - 1.0, 2.0)):
+        for k in range(4):
+            cyl(b, tx, ty, 0.045 + k * 0.31, 0.045 + k * 0.31 + 0.3, 0.36, M_VC, (0.05, 0.05, 0.06), 10)
+            cyl(b, tx, ty, 0.045 + k * 0.31 + 0.02, 0.045 + k * 0.31 + 0.28, 0.2, M_VC, (0.55, 0.57, 0.6), 8)
+    # Crew
+    cr = random.Random(11)
+    for k, x in enumerate([2.4, 3.2, 4.0, 4.8, 6.2, 7.0, 7.8, 8.6]):
+        person(b, x, 2.5 + cr.random() * 1.8, math.pi * 1.5 + cr.uniform(-0.4, 0.4), (0.95, 0.95, 0.95), h=1.7 + cr.random() * 0.15)
+    proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0, M_WALL: 4.0})
+    return b.finish()
+
+
+def pit_stand(name, L=11.0):
+    """Kommandostand auf der Boxenmauer: x entlang der Strecke, y=0 Streckenseite, +y zur Boxengasse-Seite (nach hinten)."""
+    b = Builder(name)
+    for m in (M_CONC, M_STEEL, M_ROOF, M_DARK, M_ACCENT, M_LIGHT, M_VC):
+        b.mat_index(m)
+    H = 1.1
+    # Mauerstück mit Kappe, Teamband und Fugen
+    box2(b, 0, -0.256, 0, L, 0.256, 1.0, M_CONC, (0.92, 0.92, 0.94))
+    box2(b, 0, -0.305, 1.0, L, 0.305, H + 0.005, M_DARK, (0.4, 0.4, 0.42))
+    box2(b, 0.02, -0.262, 0.35, L - 0.02, -0.25, 0.7, M_ACCENT, (1, 1, 1))
+    for k in range(1, 4):
+        box2(b, k * L / 4 - 0.015, -0.262, 0.0, k * L / 4 + 0.015, -0.25, 1.0, M_DARK, (0.3, 0.3, 0.32))
+    # Podest, Überdachung auf vier Stützen, Dachkante in Teamfarbe
+    box2(b, 1.2, 0.2, H, L - 1.2, 2.5, H + 0.14, M_DARK, (0.3, 0.3, 0.33))
+    for (x, y) in ((1.4, 0.35), (L - 1.4, 0.35), (1.4, 2.35), (L - 1.4, 2.35)):
+        cyl(b, x, y, H + 0.14, H + 2.6, 0.045, M_STEEL, (0.2, 0.22, 0.25), 6)
+    box2(b, 1.0, 0.0, H + 2.6, L - 1.0, 2.7, H + 2.68, M_ROOF, (1, 1, 1))
+    box2(b, 1.0, -0.02, H + 2.55, L - 1.0, 0.1, H + 2.7, M_ACCENT, (1, 1, 1))
+    # Monitore (zwei Reihen), Pult, Hocker, Funkgeräte
+    box2(b, 2.0, 0.5, H + 0.14, L - 2.0, 0.9, H + 0.95, M_DARK, (0.25, 0.25, 0.28))
+    for k in range(3):
+        x = 2.8 + k * 1.9
+        box2(b, x - 0.55, 0.52, H + 0.95, x + 0.55, 0.62, H + 1.6, M_DARK)
+        box2(b, x - 0.5, 0.49, H + 1.0, x + 0.5, 0.52, H + 1.55, M_LIGHT, (0.4, 0.65, 0.95))
+    for k in range(3):
+        x = 3.2 + k * 1.9
+        cyl(b, x, 1.6, H + 0.14, H + 0.58, 0.18, M_VC, (0.15, 0.15, 0.17), 8)
+        box2(b, x - 0.17, 1.62, H + 0.58, x + 0.17, 1.9, H + 1.0, M_VC, (0.15, 0.15, 0.17))
+    # Reifenwärmer-Decken (gestapelt), Feuerlöscher, Boxenstopp-Tafel (Lollipop)
+    box2(b, L - 2.0, 1.4, H + 0.14, L - 1.2, 2.3, H + 0.55, M_ACCENT, (0.35, 0.35, 0.35))
+    cyl(b, 1.4, 2.2, H + 0.14, H + 0.55, 0.08, M_VC, (0.8, 0.1, 0.1), 8)
+    cyl(b, L - 0.8, 0.5, H, H + 2.0, 0.025, M_STEEL, (0.8, 0.8, 0.82), 6)
+    box2(b, L - 1.2, 0.46, H + 1.6, L - 0.4, 0.5, H + 2.1, M_VC, (0.95, 0.95, 0.95))
+    proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0})
+    return b.finish()
+
+
+def pit_exit_light(name):
+    b = Builder(name)
+    for m in (M_STEEL, M_DARK, M_LIGHT, M_VC):
+        b.mat_index(m)
+    cyl(b, 0, 0, 0, 4.4, 0.1, M_STEEL, (0.25, 0.27, 0.3), 8)
+    box2(b, -0.3, -0.2, 3.7, 0.3, 0.2, 5.1, M_DARK, (0.1, 0.1, 0.12))
+    for k, c in enumerate(((1.0, 0.1, 0.05), (0.15, 0.15, 0.15), (0.1, 0.9, 0.2))):
+        cyl(b, 0, 4.6 - k * 0.45, -0.24, -0.18, 0.16, M_LIGHT if k != 1 else M_DARK, c, 10, axis='y')
+    return b.finish()
+
+
+def pit_sign(name):
+    b = Builder(name)
+    for m in (M_STEEL, M_VC, M_DARK):
+        b.mat_index(m)
+    cyl(b, 0, 0, 0, 2.6, 0.05, M_STEEL, (0.55, 0.57, 0.6), 6)
+    cyl(b, 0, 2.9, -0.03, 0.05, 0.6, M_VC, (0.96, 0.96, 0.96), 24, axis='y')
+    cyl(b, 0, 2.9, -0.04, 0.06, 0.6, M_VC, (0.8, 0.04, 0.04), 24, axis='y')
+    cyl(b, 0, 2.9, -0.05, 0.07, 0.47, M_VC, (0.97, 0.97, 0.97), 24, axis='y')
+    # Ziffern "80" aus Balken (Sieben-Segment)
+    segs = {'8': 'abcdefg', '0': 'abcdef'}
+    for di, ch in enumerate('80'):
+        x0 = -0.3 + di * 0.32
+        z0 = 2.9 - 0.2
+        on = segs[ch]
+        t = 0.05
+        w, h2 = 0.2, 0.2
+        pos = {'a': (x0, z0 + 2 * h2, w, t), 'g': (x0, z0 + h2, w, t), 'd': (x0, z0, w, t), 'f': (x0 - w / 2, z0 + h2 * 1.5, t, h2), 'b': (x0 + w / 2, z0 + h2 * 1.5, t, h2), 'e': (x0 - w / 2, z0 + h2 * 0.5, t, h2), 'c': (x0 + w / 2, z0 + h2 * 0.5, t, h2)}
+        for k in on:
+            cx, cz, sx, sz = pos[k]
+            box2(b, cx - sx / 2, -0.08, cz - sz / 2, cx + sx / 2, -0.06, cz + sz / 2, M_DARK, (0.05, 0.05, 0.06))
+    return b.finish()
+
+
 # ----------------------------------------------------------------------------------------------
 # Szene bauen und exportieren
 # ----------------------------------------------------------------------------------------------
@@ -1068,9 +1584,26 @@ objs.append(bush('bush_1', 21))
 objs.append(bush('bush_2', 22))
 objs.append(grandstand_module('grandstand_module', 12.0))
 objs.append(garage_bay('garage_bay'))
+objs.append(pit_garage('pit_garage'))
+objs.append(pit_stand('pit_stand'))
+objs.append(pit_exit_light('pit_exit_light'))
+objs.append(pit_sign('pit_sign'))
+objs.append(flower_patch('flowers_white', 31, (0.96, 0.96, 0.92), (0.95, 0.75, 0.1)))
+objs.append(flower_patch('flowers_yellow', 32, (0.98, 0.82, 0.12), (0.7, 0.45, 0.05)))
+objs.append(flower_patch('flowers_purple', 33, (0.62, 0.4, 0.8), (0.95, 0.9, 0.5)))
+objs.append(pebbles('pebbles_1', 41))
+objs.append(pebbles('pebbles_2', 42))
+objs.append(hedge('hedge_1', 51))
+objs.append(hedge('hedge_2', 52))
+objs.append(barn('barn'))
+objs.append(building('house_1', 11.0, 8.0, 5.2, 2.8, M_VC, (0.9, 0.86, 0.78), True, True, 1))
+objs.append(building('house_2', 9.0, 7.0, 4.6, 2.4, M_VC, (0.82, 0.74, 0.62), True, False, 2))
+objs.append(building('shed', 6.0, 4.5, 2.8, 1.2, M_PLANK, (1.3, 1.0, 0.75), False, False, 3))
+objs.append(silo('silo'))
+objs.append(pylon('pylon'))
 
 # Material-Einstellungen für glTF: Blattkarten als Alpha-Clip
-for m in (M_LEAF, M_NEEDLE, M_CROWD):
+for m in (M_LEAF, M_NEEDLE, M_CROWD, M_FENCE):
     try:
         m.blend_method = 'CLIP'
         m.alpha_threshold = 0.5

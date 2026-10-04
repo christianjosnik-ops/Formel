@@ -325,10 +325,30 @@ def paintwear():
     rgba[..., 3] = a
     return rgba
 
+def gravelrake():
+    """Geharkter Kies: parallele, leicht wellige dunkle Furchen mit hellem Grat (Linien in Fahrtrichtung)."""
+    W_, H_ = 256, 256
+    r = np.random.default_rng(97)
+    rgba = np.zeros((H_, W_, 4), np.float32)
+    ys = np.arange(H_)
+    for x0 in range(4, W_, 8):
+        ph = r.uniform(0, 6.28)
+        amp = r.uniform(0.6, 1.8)
+        xs = (x0 + amp * np.sin(ys / 256 * 6.28318 * 2 + ph)).astype(int) % W_
+        for dx, a, c in ((0, 0.42, 0.05), (1, 0.26, 0.05), (-1, 0.22, 0.75), (2, 0.14, 0.75)):
+            xx = (xs + dx) % W_
+            rgba[ys, xx, 3] = np.maximum(rgba[ys, xx, 3], a * r.uniform(0.7, 1.0, H_))
+            rgba[ys, xx, :3] = c
+    # Unterbrechungen: Furchen verlaufen nicht überall
+    mask = fnoise(256, 1.8, 98) > 0.35
+    rgba[..., 3] *= mask
+    return rgba
+
 
 save_rgba('marbles', marbles())
 save_rgba('patches', patches())
 save_rgba('paintwear', paintwear())
+save_rgba('gravelrake', gravelrake())
 
 for name, fn, strength in (('grass', grass, 5.0), ('gravel', gravel, 6.0), ('asphalt', asphalt, 3.0), ('dirt', dirt, 4.0)):
     alb, hgt = fn()

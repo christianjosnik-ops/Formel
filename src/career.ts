@@ -10,9 +10,18 @@ export interface Upgrades {
   tyres: number;
   weight: number;
 }
+export interface CareerStats {
+  races: number;
+  wins: number;
+  podiums: number;
+  /** Beste Platzierung (0 = noch keine). */
+  best: number;
+  earned: number;
+}
 export interface Career {
   money: number;
   up: Upgrades;
+  stats: CareerStats;
 }
 
 export const MAX_LEVEL = 5;
@@ -31,17 +40,19 @@ export function emptyUpgrades(): Upgrades {
   return { engine: 0, aero: 0, brakes: 0, tyres: 0, weight: 0 };
 }
 
+export const emptyStats = (): CareerStats => ({ races: 0, wins: 0, podiums: 0, best: 0, earned: 0 });
+
 export function loadCareer(): Career {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const c = JSON.parse(raw) as Career;
-      return { money: Math.max(0, Number(c.money) || 0), up: { ...emptyUpgrades(), ...c.up } };
+      return { money: Math.max(0, Number(c.money) || 0), up: { ...emptyUpgrades(), ...c.up }, stats: { ...emptyStats(), ...c.stats } };
     }
   } catch {
     /* Speicher nicht verfügbar */
   }
-  return { money: 25000, up: emptyUpgrades() };
+  return { money: 25000, up: emptyUpgrades(), stats: emptyStats() };
 }
 
 export function saveCareer(c: Career): void {
@@ -65,6 +76,18 @@ export function buy(c: Career, id: UpgradeId): boolean {
   c.up[id] = lvl + 1;
   saveCareer(c);
   return true;
+}
+
+/** Trägt ein beendetes Rennen in die Karrierestatistik ein. */
+export function recordResult(c: Career, pos: number, dnf: boolean, win: number): void {
+  const st = c.stats;
+  st.races++;
+  st.earned += win;
+  if (!dnf) {
+    if (pos === 1) st.wins++;
+    if (pos <= 3) st.podiums++;
+    if (st.best === 0 || pos < st.best) st.best = pos;
+  }
 }
 
 /** Preisgeld: Platzierung, Rennlänge, Gegnerstärke. */

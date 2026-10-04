@@ -5,11 +5,13 @@ import teams from './data/teams.json';
 import { DRIVERS, teamOf } from './race/field';
 import { AI_LEVELS, driverPace } from './race/field';
 import { RacingLine } from './race/line';
+import { RacingLineVis } from './render/racingLineVis';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
 import { GameAudio } from './audio/audio';
-import { loadCareer, prize, saveCareer } from './career';
+import { loadCareer, prize, recordResult, saveCareer } from './career';
+import { CALENDAR, loadSeason, recordRound, seasonDone } from './season';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -23,6 +25,7 @@ import { createScene } from './render/scene';
 import { DebrisRenderer, Effects } from './render/effects';
 import { buildWorldVisuals } from './render/worldVisuals';
 import { buildTrackVisuals } from './render/trackVisuals';
+import { PitCrewRenderer } from './render/pitCrew';
 import { loadSceneryAssets } from './render/sceneryAssets';
 import { createMap } from './world/maps';
 import { LapTimer } from './ui/lap';
@@ -49,8 +52,25 @@ if (gameMap.track) {
   camera.updateProjectionMatrix();
 }
 const effects = new Effects(scene, worldMap);
+const pitCrew = new PitCrewRenderer(scene);
 let debris: DebrisRenderer | null = null;
+/** Wetter/Tageszeit nach Einstellung anwenden. */
+function applyWeather(): void {
+  const fogColor = gameMap.track ? new THREE.Color(gameMap.theme.fog).getHex() : 0xb9c4ca;
+  bundle.setWeather(settings.weather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
+}
+applyWeather();
 const lapTimer = new LapTimer(gameMap.track);
+let lineVis: RacingLineVis | null = null;
+/** Ideallinien-Band nach Einstellung ein-/ausblenden (wird erst beim ersten Einschalten berechnet). */
+function syncRacingLine(): void {
+  if (!gameMap.track) return;
+  if (settings.racingLine && !lineVis) {
+    lineCache ??= new RacingLine(gameMap.track);
+    lineVis = new RacingLineVis(scene, gameMap.track, lineCache);
+  }
+  lineVis?.setVisible(settings.racingLine && settings.camera !== 'showroom');
+}
 
 const career = loadCareer();
 const physics = new PhysicsClient(settings.map, undefined, career.up);
@@ -72,7 +92,7 @@ function buildCar(): void {
     car.dispose();
   }
   const team = teams.find((t) => t.id === settings.team) ?? teams[0];
-  const driver = settings.mode === 'race' ? DRIVERS[settings.driver] ?? DRIVERS[0] : DRIVERS.find((d) => d.team === team.id) ?? DRIVERS[0];
+  const driver = settings.mode === 'race' || settings.mode === 'season' ? DRIVERS[settings.driver] ?? DRIVERS[0] : DRIVERS.find((d) => d.team === team.id) ?? DRIVERS[0];
   const livery: Livery = {
     primary: team.colors.primary,
     secondary: team.colors.secondary,
@@ -95,6 +115,7 @@ buildCar();
 rig.setMode('showroom', car);
 document.body.classList.add('showroom');
 const raceHud = new RaceHud();
+raceHud.pitAuto = settings.pitAuto;
 
 // ---------------------------------------------------------------- KI-Autos
 const aiModels: (CarModel | undefined)[] = [];
@@ -149,6 +170,50 @@ function updateAi(dt: number, s: Float64Array): void {
   }
 }
 
+
+/** Boxenstopp-Animation: Crew, Wagenheber und Radwechsel für alle Autos in der Nähe. */
+function updatePitCrew(s: Float64Array): void {
+  const list: Array<{ k: number; view: Float64Array; model: CarModel; ground: number }> = [];
+  const trk = gameMap.track;
+  const gy = (x: number, y: number) => (trk ? trk.heightAt(x, y) : 0);
+  list.push({ k: 0, view: s, model: car, ground: gy(s[S.x], s[S.y]) });
+  const n = physics.carCount;
+  for (let k = 1; k < n; k++) {
+    const v = physics.carView(k);
+    const m = aiModels[k];
+    if (v && m && m.root.visible) list.push({ k, view: v, model: m, ground: gy(v[S.x], v[S.y]) });
+  }
+  pitCrew.update(list, camera.position.x, camera.position.z);
+}
+
+/** Boxenstopp-Kamera: sanft zu einer Nahansicht des Autos vor der Box überblenden, solange der Reifenwechsel läuft. */
+let pitCamBlend = 0;
+const pitCamQuat = new THREE.Quaternion();
+const pitCamTmp = new THREE.Object3D();
+function updatePitCam(s: Float64Array, dt: number): void {
+  const active = (s[S.pitState] === 3 || pitCrew.demo >= 0) && rig.mode !== 'cockpit' && rig.mode !== 'showroom' && !debugCam;
+  pitCamBlend += ((active ? 1 : 0) - pitCamBlend) * Math.min(1, dt * 3.5);
+  if (pitCamBlend < 0.01) return;
+  const psi = s[S.psi];
+  const cx = s[S.x];
+  const cy = s[S.y];
+  const fx = Math.cos(psi);
+  const fy = Math.sin(psi);
+  const rx = Math.sin(psi);
+  const ry = -Math.cos(psi);
+  // vorn-rechts, tief, mit Blick auf die Radmitte
+  const lx = 5.0;
+  const lz = 3.4;
+  const g = gameMap.track ? gameMap.track.heightAt(cx, cy) : 0;
+  const target = new THREE.Vector3(cx + fx * lx + rx * lz, g + 1.25, -(cy + fy * lx + ry * lz));
+  pitCamTmp.position.copy(target);
+  pitCamTmp.lookAt(cx + fx * 0.2, g + 0.6, -cy - fy * 0.2);
+  pitCamQuat.copy(pitCamTmp.quaternion);
+  const k = pitCamBlend * pitCamBlend * (3 - 2 * pitCamBlend);
+  camera.position.lerp(target, k);
+  camera.quaternion.slerp(pitCamQuat, k);
+}
+
 function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
   return {
     laps: settings.laps,
@@ -158,6 +223,7 @@ function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
     grid: settings.grid,
     seed: (Date.now() & 0xffff) + 1,
     wearScale: settings.wear,
+    pitAssist: settings.pitAuto,
     startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
     ...over,
   };
@@ -188,6 +254,9 @@ function qualiGrid(cfg: RaceConfig, playerBest: number): { order: number[]; rows
   };
 }
 function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {}): void {
+  raceHud.againLabel = settings.mode === 'season' ? 'Weiter' : 'Neues Rennen';
+  syncRacingLine();
+  applyWeather();
   const race = kind !== 'free';
   if (race) settings.team = teamOf(DRIVERS[settings.driver] ?? DRIVERS[0]).id;
   applyControlClass();
@@ -195,6 +264,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   clearAi();
   physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
   physics.setBrakeBias(settings.brakeBias);
+  raceHud.pitAuto = settings.pitAuto;
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
   document.body.classList.toggle('race', race);
   if (race) {
@@ -216,13 +286,21 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   (document.getElementById('selTeam') as HTMLSelectElement).value = settings.team;
 }
 function startGame(): void {
-  launch(settings.mode === 'weekend' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
+  launch(settings.mode === 'weekend' || settings.mode === 'season' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
 }
-raceHud.onFinish = (pos, n, dnf) => {
+const season = loadSeason();
+raceHud.onFinish = (pos, n, dnf, order) => {
+  let extra = '';
+  if (settings.mode === 'season' && !seasonDone(season)) {
+    const done = season.round + 1;
+    const pts = recordRound(season, order, settings.driver);
+    extra = `\nSaison: +${pts} Punkte · Lauf ${done}/${CALENDAR.length}${seasonDone(season) ? ' – Saison beendet, Wertung im Reiter Karriere' : ''}`;
+  }
   const win = prize(pos, n, settings.laps, settings.aiLevel, dnf);
   career.money += win;
+  recordResult(career, pos, dnf, win);
   saveCareer(career);
-  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €`;
+  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €${extra}`;
 };
 raceHud.onQuali = (best) => {
   const cfg = raceConfig();
@@ -230,7 +308,7 @@ raceHud.onQuali = (best) => {
   const pos = g.rows.findIndex((r) => r.me) + 1;
   raceHud.showTable(`Qualifying – Startplatz ${pos}`, g.rows, 'Weiter zum Rennen', () => launch('race', { gridOrder: g.order }));
 };
-const start = setupStart(settings, career, (mapChanged) => {
+const start = setupStart(settings, career, season, (mapChanged) => {
   if (mapChanged) {
     try {
       sessionStorage.setItem('formel.autostart', '1');
@@ -240,7 +318,7 @@ const start = setupStart(settings, career, (mapChanged) => {
     location.reload();
   } else startGame();
 });
-raceHud.onAgain = startGame;
+raceHud.onAgain = () => (settings.mode === 'season' ? raceHud.onMenu() : startGame());
 raceHud.onMenu = () => {
   raceHud.setActive(false);
   document.body.classList.remove('race');
@@ -262,10 +340,14 @@ if (autostart) document.getElementById('start')!.classList.add('hidden');
 else start.show();
 
 const menu = setupMenu(settings, controls, {
+  onMainMenu: () => raceHud.onMenu?.(),
+  onLineChanged: syncRacingLine,
+  onWeatherChanged: applyWeather,
   onTeamChanged: buildCar,
   onCameraChanged: () => {
     rig.setMode(settings.camera, car);
     document.body.classList.toggle('showroom', settings.camera === 'showroom');
+    syncRacingLine();
   },
   onTelemetryChanged: () => hud.setTelemetryVisible(settings.telemetry),
   onBrakeBias: (b) => physics.setBrakeBias(b),
@@ -449,8 +531,10 @@ function frame(now: number): void {
     if (debris) debris.groundY = ground;
     car.update(s, dt, ground, tilt);
     updateAi(dt, s);
+    updatePitCrew(s);
     raceHud.update(physics, dt);
     rig.update(s, dt, car);
+    updatePitCam(s, dt);
     if (debugCam) {
       camera.position.set(debugCam.x, debugCam.y, debugCam.z);
       camera.lookAt(debugCam.lx, debugCam.ly, debugCam.lz);
@@ -474,6 +558,7 @@ function frame(now: number): void {
       }
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
+    bundle.setCinema(rig.mode === 'showroom' ? 0 : s[S.speedKmh] / 3.6, performance.now() * 0.001);
     hud.update(s, dt, settings.tc, settings.abs);
     if (document.body.classList.contains('inmenu')) audio.silence();
     else audio.update(s, dt, physics);
@@ -540,7 +625,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {
