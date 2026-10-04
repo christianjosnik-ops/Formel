@@ -118,6 +118,7 @@ export class RaceHud {
     }
 
     this.tyres(me);
+    this.flags(me);
     this.acc += dt;
     if (this.acc >= 0.2) {
       this.acc = 0;
@@ -147,6 +148,36 @@ export class RaceHud {
     $('results').classList.remove('hidden');
   }
   tableAction: (() => void) | null = null;
+
+  private lastFlag = 0;
+  /** Flaggen (gelb, doppelt gelb, Safety Car, Grün) und Wetterhinweis. */
+  private flags(me: Float64Array): void {
+    const bar = $('flagBar');
+    const f = me[S.flag] | 0;
+    const racing = me[S.raceState] === 1 && this.kind === 'race';
+    if (!racing || f === 0) {
+      bar.classList.add('hidden');
+    } else {
+      bar.classList.remove('hidden');
+      bar.className = f === 1 ? '' : f === 2 ? 'dbl' : f === 3 ? 'sc' : 'green';
+      bar.innerHTML = f === 1 ? 'GELB<small>Gefahr – nicht überholen</small>' : f === 2 ? 'DOPPELT GELB<small>Auto auf der Strecke – bereit zum Anhalten</small>' : f === 3 ? 'SAFETY CAR<small>Tempo halten · kein Überholen</small>' : 'GRÜN<small>Rennen freigegeben</small>';
+    }
+    if (f === 3 && this.lastFlag !== 3) this.say('SAFETY CAR', 2);
+    if (f === 4 && this.lastFlag === 3) this.say('GRÜN – LOS!', 1.6);
+    this.lastFlag = f;
+    const wx = $('raceWx');
+    const rain = me[S.rain];
+    const wet = me[S.wet];
+    if (wet > 0.08 || rain > 0.05) {
+      wx.classList.remove('hidden');
+      wx.textContent = `${rain > 0.05 ? '☔' : '💧'} Strecke ${Math.round(wet * 100)} %`;
+    } else wx.classList.add('hidden');
+    // Mischung passt nicht zur Nässe: Hinweis (nur Text, kein Zwang)
+    const comp = COMPOUND_ORDER[me[S.compound] | 0] ?? 'medium';
+    const slick = comp === 'soft' || comp === 'medium' || comp === 'hard';
+    this.wxHint = slick && wet > 0.3 ? 'NASSE STRECKE – Regenreifen (I/W) erwägen: BOX drücken' : !slick && wet < 0.1 && rain < 0.05 ? 'STRECKE TROCKEN – Slicks erwägen: BOX drücken' : '';
+  }
+  wxHint = '';
 
   private tyres(me: Float64Array): void {
     const ci = me[S.compound] | 0;
@@ -189,6 +220,7 @@ export class RaceHud {
       this.say('LOS!', 1.5);
       msg.textContent = '';
     } else if (me[S.pitLimiter] > 0.5) msg.textContent = 'BOXENGASSE 80 km/h – halte in deiner Box';
+    else if (st === 0 && this.wxHint && Math.floor(performance.now() / 700) % 2 === 0) msg.textContent = this.wxHint;
     else if (st === 0 && wmax > 0.72 && Math.floor(performance.now() / 600) % 2 === 0) msg.textContent = 'REIFEN ABGENUTZT – BOX drücken (Taste P)';
     else msg.textContent = '';
     if (st === 1) this.want = true;

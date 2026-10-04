@@ -293,7 +293,13 @@ export class Effects {
     this.smoke.points.visible = !low;
   }
 
+  /** Anzahl Räder auf dem Kerb und größter Schlupf (für die Haptik), je Aufruf von update neu berechnet. */
+  kerbWheels = 0;
+  slipMax = 0;
+
   update(snap: Float64Array, dt: number): void {
+    this.kerbWheels = 0;
+    this.slipMax = 0;
     const x = snap[S.x];
     const y = snap[S.y];
     const psi = snap[S.psi];
@@ -356,6 +362,8 @@ export class Effects {
       if (off) continue;
       // Staub auf Kies/Gras/Sand
       const kind = surfaceAt(this.map, wx, wy);
+      if (kind === 'kerb') this.kerbWheels++;
+      this.slipMax = Math.max(this.slipMax, Math.abs(snap[S.kappa + i]) / 0.3, Math.abs(snap[S.alpha + i]) / 0.2);
       const sp = SURFACES[kind];
       if (sp.dust > 0 && speed > 5) {
         const n = sp.dust * dt * speed * 1.4;
@@ -378,6 +386,31 @@ export class Effects {
             0.32,
             -0.05,
             1.4,
+          );
+        }
+      }
+      // Gischt: auf nasser Strecke wirbeln die Räder Wasser auf (Hinterräder mehr)
+      const wetK = snap[S.wet];
+      if (kind === 'asphalt' && wetK > 0.2 && speed > 12) {
+        const n = (wetK - 0.12) * dt * speed * (i >= 2 ? 1.6 : 0.9);
+        let k = Math.floor(n) + (rnd() < n - Math.floor(n) ? 1 : 0);
+        while (k-- > 0) {
+          this.smoke.emit(
+            wx + (rnd() - 0.5) * 0.35,
+            0.1,
+            -wy + (rnd() - 0.5) * 0.35,
+            -vwx * 0.08 + (rnd() - 0.5) * 2.4,
+            1.2 + rnd() * 2.4,
+            vwy * 0.08 + (rnd() - 0.5) * 2.4,
+            0.9 + rnd() * 0.8,
+            0.35,
+            1.9 + rnd() * 0.8,
+            0.84,
+            0.88,
+            0.92,
+            0.2 * Math.min(1, wetK * 1.4),
+            -0.02,
+            1.5,
           );
         }
       }

@@ -335,6 +335,7 @@ export function buildWalls(scene: THREE.Scene, walls: WallDef[], tireBox = false
 
 export interface WorldVisuals {
   setDetail?: (f: number) => void;
+  setWet?: (w: number) => void;
   /** Setzt die Kegel gemäß Snapshot (bewegte Kegel) und stellt alle anderen an ihren Platz. */
   updateCones: (snap: Float64Array) => void;
 }

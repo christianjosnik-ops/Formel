@@ -37,28 +37,29 @@ interface Group {
   only?: Array<Settings['mode']>;
 }
 
-const COMPOUND_DOT: Record<string, string> = { soft: '#ff3b30', medium: '#ffd12e', hard: '#f2f2f2' };
+const COMPOUND_DOT: Record<string, string> = { soft: '#ff3b30', medium: '#ffd12e', hard: '#f2f2f2', inter: '#2ecc40', wet: '#1f77ff' };
 
 const LAPS: Choice = { id: 'laps', label: 'Renndistanz', opts: [['1', '1'], ['3', '3'], ['5', '5'], ['10', '10'], ['20', '20']], hint: 'Runden', get: (s) => String(s.laps), set: (s, v) => (s.laps = Number(v)) };
 const AI: Choice = { id: 'ai', label: 'Gegner (KI)', opts: [['-1', 'Aus'], ['0', 'Anfänger'], ['1', 'Mittel'], ['2', 'Profi'], ['3', 'Legende']], get: (s) => String(s.aiLevel), set: (s, v) => (s.aiLevel = Number(v)) };
 const FIELD: Choice = { id: 'field', label: 'Starterfeld', opts: [['6', '6'], ['12', '12'], ['22', '22']], hint: 'Autos', get: (s) => String(s.field), set: (s, v) => (s.field = Number(v)), show: (s) => s.aiLevel >= 0 };
 const GRID: Choice = { id: 'grid', label: 'Startplatz', opts: [['pole', 'Pole'], ['mid', 'Mitte'], ['last', 'Letzter'], ['random', 'Zufall']], get: (s) => s.grid, set: (s, v) => (s.grid = v as Settings['grid']), only: ['race'] };
 const PIT: Choice = { id: 'pitauto', label: 'Boxenstopp', opts: [['1', 'Automatik', 'BOX-Knopf genügt'], ['0', 'Manuell', 'selbst einfahren & halten']], get: (s) => (s.pitAuto ? '1' : '0'), set: (s, v) => (s.pitAuto = v === '1') };
-const COMPOUND: Choice = { id: 'compound', label: 'Startreifen', opts: [['soft', 'Soft', 'schnell, verschleißt'], ['medium', 'Medium', 'Allrounder'], ['hard', 'Hard', 'hält lange']], get: (s) => (['soft', 'medium', 'hard'].includes(s.compound) ? s.compound : 'medium'), set: (s, v) => (s.compound = v as Settings['compound']) };
+const COMPOUND: Choice = { id: 'compound', label: 'Startreifen', opts: [['soft', 'Soft', 'schnell, verschleißt'], ['medium', 'Medium', 'Allrounder'], ['hard', 'Hard', 'hält lange'], ['inter', 'Inter', 'feucht'], ['wet', 'Regen', 'nass']], get: (s) => (['soft', 'medium', 'hard', 'inter', 'wet'].includes(s.compound) ? s.compound : 'medium'), set: (s, v) => (s.compound = v as Settings['compound']) };
 const WEAR: Choice = { id: 'wear', label: 'Reifenverschleiß', opts: [['0', 'Aus'], ['1', 'Normal'], ['2', 'Hoch', 'Boxenstopps nötig']], get: (s) => String(s.wear), set: (s, v) => (s.wear = Number(v)) };
+const SAFETY: Choice = { id: 'sc', label: 'Safety Car', hint: 'bei Unfällen', opts: [['1', 'Ein', 'Feld sammelt sich'], ['0', 'Aus']], get: (s) => (s.safetyCar ? '1' : '0'), set: (s, v) => (s.safetyCar = v === '1') };
 const LIMITS: Choice = { id: 'limits', label: 'Streckenlimits', opts: [['0', 'Aus'], ['1', 'Ein', 'ungültige Runden']], get: (s) => (s.trackLimits ? '1' : '0'), set: (s, v) => (s.trackLimits = v === '1') };
 
 const SETUP: Group[] = [
   { title: 'Rennen', ico: '🏁', only: ['race', 'weekend', 'season'], items: [LAPS, AI, FIELD, GRID] },
   { title: 'Boxenstopp & Reifen', ico: '🛞', items: [PIT, COMPOUND, WEAR] },
-  { title: 'Regeln', ico: '⚖️', items: [LIMITS] },
+  { title: 'Regeln', ico: '⚖️', items: [LIMITS, SAFETY] },
+  { title: 'Wetter & Licht', ico: '⛅', items: [{ id: 'rain', label: 'Regen', hint: 'Grip, Reifenwahl', opts: [['off', 'Aus'], ['light', 'Leicht', 'feucht'], ['heavy', 'Stark', 'Regenreifen'], ['changing', 'Wechselhaft', 'Schauer im Rennen'], ['drying', 'Abtrocknend', 'Start nass']], get: (s) => s.rain, set: (s, v) => (s.rain = v as Settings['rain']) }, { id: 'weather', label: 'Stimmung', opts: [['sunny', 'Sonnig', 'klarer Himmel'], ['overcast', 'Bewölkt', 'weiches Licht'], ['evening', 'Abendlicht', 'tiefe Sonne']], get: (s) => s.weather, set: (s, v) => (s.weather = v as Settings['weather']) }] },
 ];
 
 const DRIVE: Group[] = [
   { title: 'Fahrhilfen', ico: '🛟', items: [{ id: 'assist', label: 'Stabilität', opts: [['2', 'Stark', 'Einsteiger'], ['1', 'Mittel'], ['0', 'Aus', 'Profi']], get: (s) => String(s.tc), set: (s, v) => { const n = Number(v); s.tc = n; s.abs = n === 0 ? 0 : 1; s.steerAssist = n; } }] },
   { title: 'Steuerung', ico: '🎮', items: [{ id: 'control', label: 'Eingabe', opts: [['arrows', 'Pfeile', 'rechts lenken · links Pedale'], ['touch', 'Lenkband', 'mit Pedalen'], ['tilt', 'Neigung']], get: (s) => s.control, set: (s, v) => (s.control = v as Settings['control']) }] },
   { title: 'Ideallinie', ico: '🧭', items: [{ id: 'line', label: 'Fahrlinie', hint: 'Bremspunkte anzeigen', opts: [['0', 'Aus'], ['1', 'Ein', 'grün Gas · rot Bremsen']], get: (s) => (s.racingLine ? '1' : '0'), set: (s, v) => (s.racingLine = v === '1') }] },
-  { title: 'Wetter & Licht', ico: '⛅', items: [{ id: 'weather', label: 'Stimmung', opts: [['sunny', 'Sonnig', 'klarer Himmel'], ['overcast', 'Bewölkt', 'weiches Licht'], ['evening', 'Abendlicht', 'tiefe Sonne']], get: (s) => s.weather, set: (s, v) => (s.weather = v as Settings['weather']) }] },
   { title: 'Grafik', ico: '🖥', items: [{ id: 'quality', label: 'Qualität', opts: [['auto', 'Auto', '60 FPS halten'], ['high', 'Hoch'], ['low', 'Niedrig']], get: (s) => s.quality, set: (s, v) => (s.quality = v as Settings['quality']) }] },
 ];
 
@@ -214,7 +215,8 @@ export function setupStart(settings: Settings, career: Career, season: Season, o
       rows.push(['Boxenstopp', settings.pitAuto ? 'Automatik' : 'Manuell']);
     }
     if (settings.mode === 'season') rows.splice(1, 0, ['Saison', seasonDone(season) ? 'beendet – neue startet' : `Lauf ${season.round + 1}/${CALENDAR.length}`]);
-    rows.push(['Reifen', `${['Soft', 'Medium', 'Hard'][['soft', 'medium', 'hard'].indexOf(settings.compound)] ?? 'Medium'} · Verschleiß ${['aus', 'normal', 'hoch'][settings.wear] ?? 'normal'}`]);
+    rows.push(['Wetter', `${{ sunny: 'Sonnig', overcast: 'Bewölkt', evening: 'Abendlicht' }[settings.weather]}${settings.rain === 'off' ? '' : ` · Regen ${{ light: 'leicht', heavy: 'stark', changing: 'wechselhaft', drying: 'abtrocknend' }[settings.rain]}`}`]);
+    rows.push(['Reifen', `${({ soft: 'Soft', medium: 'Medium', hard: 'Hard', inter: 'Inter', wet: 'Regen' } as Record<string, string>)[settings.compound] ?? 'Medium'} · Verschleiß ${['aus', 'normal', 'hoch'][settings.wear] ?? 'normal'}`]);
     sideBox.innerHTML = '';
     const head = document.createElement('div');
     head.className = 'sideHead';

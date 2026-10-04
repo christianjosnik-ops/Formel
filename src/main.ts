@@ -6,6 +6,9 @@ import { DRIVERS, teamOf } from './race/field';
 import { AI_LEVELS, driverPace } from './race/field';
 import { RacingLine } from './race/line';
 import { RacingLineVis } from './render/racingLineVis';
+import { RainFx } from './render/rain';
+import { Haptics } from './input/haptics';
+import { SafetyCarModel } from './render/safetyCarModel';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
@@ -55,10 +58,18 @@ const effects = new Effects(scene, worldMap);
 const pitCrew = new PitCrewRenderer(scene);
 let debris: DebrisRenderer | null = null;
 /** Wetter/Tageszeit nach Einstellung anwenden. */
-function applyWeather(): void {
+let lookWeather: typeof settings.weather | null = null;
+function applyWeather(override?: typeof settings.weather): void {
   const fogColor = gameMap.track ? new THREE.Color(gameMap.theme.fog).getHex() : 0xb9c4ca;
-  bundle.setWeather(settings.weather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
+  lookWeather = override ?? settings.weather;
+  bundle.setWeather(lookWeather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
 }
+const rainFx = new RainFx(scene);
+const haptics = new Haptics();
+const scModel = new SafetyCarModel();
+scene.add(scModel.root);
+const windTmp = new THREE.Vector3();
+let debugSc: { x: number; y: number; psi: number } | null = null;
 applyWeather();
 const lapTimer = new LapTimer(gameMap.track);
 let lineVis: RacingLineVis | null = null;
@@ -224,7 +235,8 @@ function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
     seed: (Date.now() & 0xffff) + 1,
     wearScale: settings.wear,
     pitAssist: settings.pitAuto,
-    startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
+    safetyCar: settings.safetyCar,
+    startCompound: (['soft', 'medium', 'hard', 'inter', 'wet'].includes(settings.compound) ? settings.compound : 'medium') as RaceConfig['startCompound'],
     ...over,
   };
 }
@@ -262,7 +274,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up, settings.rain);
   physics.setBrakeBias(settings.brakeBias);
   raceHud.pitAuto = settings.pitAuto;
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
@@ -342,7 +354,7 @@ else start.show();
 const menu = setupMenu(settings, controls, {
   onMainMenu: () => raceHud.onMenu?.(),
   onLineChanged: syncRacingLine,
-  onWeatherChanged: applyWeather,
+  onWeatherChanged: () => applyWeather(),
   onTeamChanged: buildCar,
   onCameraChanged: () => {
     rig.setMode(settings.camera, car);
@@ -447,18 +459,10 @@ function crashFx(s: Float64Array, dt: number): void {
   if (lvl >= 3 && prevLevel < 3 && !document.body.classList.contains('showroom')) {
     slowT = 1.5;
     flash = 1;
-    try {
-      navigator.vibrate?.([60, 40, 120]);
-    } catch {
-      /* ignorieren */
-    }
+    haptics.crash(lvl);
   } else if (lvl >= 2 && prevLevel < 2) {
     flash = Math.max(flash, 0.45);
-    try {
-      navigator.vibrate?.(40);
-    } catch {
-      /* ignorieren */
-    }
+    haptics.crash(lvl);
   }
   prevLevel = lvl;
   void speedKmh;
@@ -543,6 +547,8 @@ function frame(now: number): void {
     debris?.update(s);
     effects.setPixelScale(renderer.domElement.height, camera.fov);
     effects.update(s, dt);
+    haptics.enabled = settings.haptics && !document.body.classList.contains('inmenu') && rig.mode !== 'showroom';
+    haptics.update(performance.now() * 0.001, s[S.speedKmh], effects.kerbWheels, effects.slipMax, Math.max(s[S.scrape], s[S.scrape + 1], s[S.scrape + 2], s[S.scrape + 3]));
     // Kamera-Schütteln bei Einschlägen
     {
       let f = 0;
@@ -558,6 +564,23 @@ function frame(now: number): void {
       }
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
+    {
+      // Regen: Nässe auf Strecke/Boden, Regenstreifen, trübes Licht; Safety Car
+      const wet = s[S.wet];
+      const rain = s[S.rain];
+      visuals.setWet?.(wet);
+      const rainy = lookWeather === 'overcast' && settings.weather !== 'overcast';
+      if (rain > 0.22 && !rainy) applyWeather('overcast');
+      else if (rain < 0.08 && wet < 0.3 && lookWeather !== settings.weather) applyWeather();
+      const sp = s[S.speedKmh] / 3.6;
+      windTmp.set(Math.cos(s[S.psi]) * sp, 0, -Math.sin(s[S.psi]) * sp);
+      rainFx.update(performance.now() * 0.001, camera.position, rig.mode === 'showroom' ? 0 : rain, windTmp);
+      const fs = debugSc;
+      const sc = (s[S.scState] > 0 || !!fs) && rig.mode !== 'showroom';
+      const scx = fs ? fs.x : s[S.scX];
+      const scy = fs ? fs.y : s[S.scY];
+      scModel.update(sc, scx, sc && gameMap.track ? gameMap.track.heightAt(scx, scy) : 0, -scy, fs ? fs.psi : s[S.scPsi], performance.now() * 0.001);
+    }
     bundle.setCinema(rig.mode === 'showroom' ? 0 : s[S.speedKmh] / 3.6, performance.now() * 0.001);
     hud.update(s, dt, settings.tc, settings.abs);
     if (document.body.classList.contains('inmenu')) audio.silence();
@@ -625,7 +648,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { setDebugSc: (v: { x: number; y: number; psi: number } | null) => { debugSc = v; }, pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

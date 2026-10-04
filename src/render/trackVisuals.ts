@@ -1094,7 +1094,20 @@ function buildDistanceGrid(t: Track, x0: number, y0: number, nx: number, ny: num
   return { d, h };
 }
 
+/** Materialien, die bei Nässe dunkler und glänzender werden. */
+interface WetMat {
+  m: THREE.MeshStandardMaterial;
+  rough0: number;
+  rough1: number;
+  color0: THREE.Color;
+  dark: number;
+  env0: number;
+  env1: number;
+}
+
 export interface TrackVisuals {
+  /** Streckennässe 0..1: Asphalt und Boden werden dunkler und spiegelnder. */
+  setWet: (w: number) => void;
   /** Gelände- und Baumhöhe an (x, y) in Physikkoordinaten. */
   heightAt: (x: number, y: number) => number;
   /** Kegel-Aktualisierung (Strecken haben keine). */
@@ -1117,6 +1130,12 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   const H = t.maxY - t.minY + 2 * margin;
   const nx = Math.ceil(W / cell) + 1;
   const ny = Math.ceil(H / cell) + 1;
+  const wetMats: WetMat[] = [];
+  const wetReg = <M extends THREE.Material>(m: M, rough1: number, dark: number, env1 = 1): M => {
+    const sm = m as unknown as THREE.MeshStandardMaterial;
+    wetMats.push({ m: sm, rough0: sm.roughness, rough1, color0: sm.color.clone(), dark, env0: sm.envMapIntensity ?? 1, env1 });
+    return m;
+  };
   const grids = buildDistanceGrid(t, x0, y0, nx, ny, cell);
   const dist = grids.d;
   const trackH = grids.h;
@@ -1233,7 +1252,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     g.setIndex(index);
     g.computeVertexNormals();
     const tex = surfaceTexture('grass');
-    const mesh = new THREE.Mesh(g, grassPatch(new THREE.MeshStandardMaterial({ map: tex, normalMap: surfaceNormal('grass'), normalScale: new THREE.Vector2(0.9, 0.9), vertexColors: true, roughness: 1, metalness: 0 }), 'grass-terrain-n3', 0.9, dirtTexture(), true));
+    const mesh = new THREE.Mesh(g, grassPatch(wetReg(new THREE.MeshStandardMaterial({ map: tex, normalMap: surfaceNormal('grass'), normalScale: new THREE.Vector2(0.9, 0.9), vertexColors: true, roughness: 1, metalness: 0 }), 0.72, 0.72, 1.2), 'grass-terrain-n3', 0.9, dirtTexture(), true));
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
@@ -1250,7 +1269,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     return m;
   };
   // gepflegter Rasen bis zur Barriere
-  const lawnMat = grassPatch(layerMat(lawnTex, 1, { color: 0xaec797, roughness: 1, normalMap: surfaceNormal('grass') }), 'grass-lawn-n', 0.6);
+  const lawnMat = wetReg(grassPatch(layerMat(lawnTex, 1, { color: 0xaec797, roughness: 1, normalMap: surfaceNormal('grass') }), 'grass-lawn-n', 0.6), 0.7, 0.7, 1.3);
   add(ribbon(t, 0.004, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i], (i) => t.wl[i] + t.barrierL[i], () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   add(ribbon(t, 0.004, (i) => -(t.wr[i] + t.barrierR[i]), (i) => -(t.wr[i] + t.kerbR[i]), () => true, (i, lat) => [lat / 24, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 24]), lawnMat);
   // Erdstreifen zwischen Asphalt/Kerb und Zaun (wie in der Vorlage): wechselnde Breite, weiche Ränder
@@ -1269,13 +1288,13 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     amap.colorSpace = THREE.NoColorSpace;
     const dmap = dirtTexture();
     dmap.repeat.set(1, 1);
-    const dirtMat = layerMat(dmap, 2, { transparent: true, depthWrite: false, roughness: 1, alphaMap: amap, normalMap: dirtTexture(true), color: 0xd8cbb8 });
+    const dirtMat = wetReg(layerMat(dmap, 2, { transparent: true, depthWrite: false, roughness: 1, alphaMap: amap, normalMap: dirtTexture(true), color: 0xd8cbb8 }), 0.55, 0.55, 1.3);
     const wide = (i: number, k: number) => 1.6 + 2.6 * (0.5 + 0.5 * Math.sin(t.s[i % t.n] / (23 + k * 9) + k)) + 1.2 * (0.5 + 0.5 * Math.sin(t.s[i % t.n] / 7.3 + k * 2));
     add(ribbon(t, 0.006, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i] - 0.2, (i) => t.wl[i] + t.pitW[i] + t.kerbL[i] + wide(i, 1), (i) => t.gravelL[i] < 1.5, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 9]), dirtMat);
     add(ribbon(t, 0.006, (i) => -(t.wr[i] + t.kerbR[i] + wide(i, 2)), (i) => -(t.wr[i] + t.kerbR[i]) + 0.2, (i) => t.gravelR[i] < 1.5, (i, _lat, e) => [1 - e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 9]), dirtMat);
   }
   // Kies
-  const gravelMat = layerMat(gravelTex, 2, { roughness: 1, normalMap: surfaceNormal('gravel'), normalScale: new THREE.Vector2(1.2, 1.2) });
+  const gravelMat = wetReg(layerMat(gravelTex, 2, { roughness: 1, normalMap: surfaceNormal('gravel'), normalScale: new THREE.Vector2(1.2, 1.2) }), 0.75, 0.62, 1.2);
   add(ribbon(t, 0.008, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.kerbL[i] + t.gravelL[i], (i) => t.gravelL[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   add(ribbon(t, 0.008, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   // Geharkter Kies: Furchen in Fahrtrichtung als Overlay
@@ -1289,7 +1308,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     add(ribbon(t, 0.0095, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 3.5, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 3.5]), rakeMat, false);
   }
   // Asphalt
-  const asphaltMat = layerMat(asphalt, 3, { roughness: 0.72, color: 0xe4e6ee, normalMap: surfaceNormal('asphalt'), normalScale: new THREE.Vector2(0.7, 0.7) });
+  const asphaltMat = wetReg(layerMat(asphalt, 3, { roughness: 0.72, color: 0xe4e6ee, normalMap: surfaceNormal('asphalt'), normalScale: new THREE.Vector2(0.7, 0.7) }), 0.16, 0.5, 2.6);
   add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i] + t.pitW[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
   // Reifenspur (Ideallinie: zur Kurveninnenseite verschoben)
   {
@@ -1998,6 +2017,14 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   }
 
   return {
+    setWet: (w: number) => {
+      const k = Math.max(0, Math.min(1, w));
+      for (const e of wetMats) {
+        e.m.roughness = e.rough0 + (e.rough1 - e.rough0) * k;
+        e.m.color.copy(e.color0).multiplyScalar(1 - (1 - e.dark) * k);
+        e.m.envMapIntensity = e.env0 + (e.env1 - e.env0) * k;
+      }
+    },
     heightAt,
     updateCones: () => {},
     center: new THREE.Vector3(cx, 0, -cy),

@@ -26,6 +26,12 @@ export interface Settings {
   pitAuto: boolean;
   /** Ideallinie als Fahrhilfe einblenden. */
   racingLine: boolean;
+  /** Regen: aus, leicht, stark, wechselhaft, abtrocknend. */
+  rain: 'off' | 'light' | 'heavy' | 'changing' | 'drying';
+  /** Vibration/Rumble. */
+  haptics: boolean;
+  /** Safety Car bei Unfällen. */
+  safetyCar: boolean;
   /** Wetter / Tageszeit. */
   weather: 'sunny' | 'overcast' | 'evening';
   trackLimits: boolean;
@@ -61,6 +67,9 @@ export const DEFAULTS: Settings = {
   autoAero: true,
   pitAuto: true,
   racingLine: false,
+  rain: 'off',
+  safetyCar: true,
+  haptics: true,
   weather: 'sunny',
   trackLimits: false,
   wear: 1,
