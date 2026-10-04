@@ -4,7 +4,7 @@ import { AeroModel } from './aero';
 import { Powertrain } from './powertrain';
 import { S } from './layout';
 import { TireModel } from './tire';
-import { COMPOUNDS, COMPOUND_ORDER, TYRE, gripFromTemp, gripFromWear, type CompoundId } from '../config/tyres';
+import { COMPOUNDS, COMPOUND_ORDER, TYRE, gripFromTemp, gripFromWear, wetGrip, wetWear, type CompoundId } from '../config/tyres';
 
 const RAD_TO_RPM = 60 / (2 * Math.PI);
 
@@ -76,6 +76,8 @@ export class Vehicle {
   readonly tyreWear = new Float64Array(4);
   readonly tyreGrip = new Float64Array([1, 1, 1, 1]);
   compound: CompoundId = 'medium';
+  /** Streckennässe 0..1 (vom Wetter gesetzt). */
+  wetness = 0;
   /** Verschleißfaktor (Einstellung × Upgrade); 0 = kein Verschleiß. */
   wearScale = 1;
   /** Gripfaktor durch Upgrades. */
@@ -261,7 +263,8 @@ export class Vehicle {
   /** Geschätzte Querbeschleunigungsgrenze [m/s^2] bei Geschwindigkeit v (mechanischer Grip + Abtrieb). */
   gripLimit(speed: number): number {
     const k = Math.min(1, (speed * speed) / (75 * 75));
-    return PHYS.gravity * (2.1 + 3.0 * k);
+    // Nässe senkt die Grenze (sonst würden die Fahrhilfen mehr Lenkwinkel/Gierrate zulassen, als der Reifen trägt)
+    return PHYS.gravity * (2.1 + 3.0 * k) * (0.35 + 0.65 * wetGrip(this.compound, this.wetness));
   }
 
   /**
@@ -597,7 +600,7 @@ export class Vehicle {
       const tire = front ? this.tireF : this.tireR;
       const fz = this.fz[i];
       const comp = COMPOUNDS[this.compound];
-      const tg = comp.grip * gripFromTemp(this.tyreTemp[i], comp.topt) * gripFromWear(this.tyreWear[i]) * this.tyreBonus;
+      const tg = comp.grip * wetGrip(this.compound, this.wetness) * gripFromTemp(this.tyreTemp[i], comp.topt) * gripFromWear(this.tyreWear[i]) * this.tyreBonus;
       this.tyreGrip[i] = tg;
       const grip = this.gripScale[i] * this.surfGrip[i] * tg * (1 - 0.55 * this.punct[i]);
       tire.compute(fz, kap, al, grip, this.tireOut);
@@ -608,10 +611,10 @@ export class Vehicle {
         const pSlip = Math.abs(fxT * kap * vden) + Math.abs(fyT * vyw);
         const T = this.tyreTemp[i];
         const hot = Math.max(0, (T - 105) / 35);
-        const cool = (TYRE.coolK * (1 + TYRE.coolSpeed * Math.abs(vxw)) * (1 + 3 * hot * hot) * (T - TYRE.ambient)) / TYRE.heatCap;
+        const cool = (TYRE.coolK * (1 + TYRE.coolSpeed * Math.abs(vxw)) * (1 + 3 * hot * hot) * (1 + 1.1 * this.wetness) * (T - TYRE.ambient)) / TYRE.heatCap;
         this.tyreTemp[i] = T + (((TYRE.heatK * pSlip + TYRE.hysteresis * this.fz[i] * Math.abs(vxw)) / TYRE.heatCap) - cool) * dt;
         const over = Math.max(0, (T - comp.topt - 12) / 20);
-        this.tyreWear[i] = Math.min(1, this.tyreWear[i] + TYRE.wearPerJoule * this.wearScale * comp.wear * pSlip * (1 + 1.2 * over * over) * dt);
+        this.tyreWear[i] = Math.min(1, this.tyreWear[i] + TYRE.wearPerJoule * this.wearScale * comp.wear * wetWear(this.compound, this.wetness) * pSlip * (1 + 1.2 * over * over) * dt);
       }
       this.fx[i] = fxT;
       this.fy[i] = fyT;

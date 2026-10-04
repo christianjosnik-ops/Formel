@@ -5,6 +5,7 @@ import type { CompoundId } from '../config/tyres';
 import type { Upgrades } from '../career';
 import type { MapId } from '../world/maps';
 import type { DriverInput } from './vehicle';
+import type { RainMode } from '../race/weather';
 
 /**
  * Main-Thread-Seite der Physik: startet den Worker, hält einen kleinen Ring aus Snapshots und
@@ -27,9 +28,9 @@ export class PhysicsClient {
   private sb: Float64Array | null = null;
   private st = 0;
 
-  constructor(mapId: MapId, race?: RaceConfig, upgrades?: Upgrades) {
+  constructor(mapId: MapId, race?: RaceConfig, upgrades?: Upgrades, rain?: RainMode) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.send({ type: 'init', map: mapId, race, upgrades });
+    this.send({ type: 'init', map: mapId, race, upgrades, rain });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => {
       const m = e.data;
       if (m.type === 'ready') {
@@ -66,8 +67,8 @@ export class PhysicsClient {
   reset(x = 0, y = 0, psi = 0, speed = 0): void {
     this.send({ type: 'reset', x, y, psi, speed });
   }
-  restart(race?: RaceConfig, upgrades?: Upgrades): void {
-    this.send({ type: 'restart', race, upgrades });
+  restart(race?: RaceConfig, upgrades?: Upgrades, rain?: RainMode): void {
+    this.send({ type: 'restart', race, upgrades, rain });
   }
   setTimeScale(scale: number): void {
     this.scale = scale;

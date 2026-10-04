@@ -69,6 +69,22 @@ export class AIDriver {
   targetSpeed = 0;
   /** Zusätzlicher Querversatz (Startaufstellung: Spur halten, später auf 0 abbauen). */
   laneBias = 0;
+  /** Griplevel gegenüber trockener Medium (Nässe, Mischung): skaliert Kurven- und Bremstempo. */
+  private gripF = 1;
+  /** Wurzel des Griplevels: Kurventempo wächst mit sqrt(Querbeschleunigung). */
+  private gripS = 1;
+
+  setGrip(k: number): void {
+    this.gripF = Math.max(0.3, Math.min(1.1, k));
+    this.gripS = Math.sqrt(this.gripF);
+  }
+
+  /** Tempo mit Griplevel: nur die Kurvenanteile (unter ~95 m/s) werden langsamer, die Endgeschwindigkeit der Geraden bleibt. */
+  private wetV(v: number): number {
+    if (this.gripS >= 0.999) return v;
+    const c = Math.max(0, Math.min(1, (95 - v) / 45));
+    return v * (1 - (1 - this.gripS) * c);
+  }
 
   constructor(
     private readonly line: RacingLine,
@@ -346,7 +362,7 @@ export class AIDriver {
 
     // ---- Geschwindigkeit ----
     const look = Math.max(1, Math.round((speed * 0.2) / t.ds));
-    let vt = line.speed[(idx + look) % n] * this.params.pace * level * (1 + this.err) * this.attackBoost;
+    let vt = this.wetV(line.speed[(idx + look) % n]) * this.params.pace * level * (1 + this.err) * this.attackBoost;
     if (this.mistake > 0) vt *= 1.07;
     // Bahnfehler: bei großer Abweichung zurücknehmen
     const latErr = Math.abs(by);
@@ -365,14 +381,14 @@ export class AIDriver {
       for (let k = 0; k < horizon; k++) {
         const j = (idx + k) % n;
         dist += line.seg[j];
-        const vp = line.speed[(j + 1) % n] * scale;
+        const vp = this.wetV(line.speed[(j + 1) % n]) * scale;
         if (speed > vp) {
           const a = (speed * speed - vp * vp) / (2 * Math.max(dist - 5, 2));
           if (a > aReq) aReq = a;
         }
       }
     }
-    const avail = (brakeLimit(speed) / 0.92) * 0.96;
+    const avail = (brakeLimit(speed) / 0.92) * 0.96 * (0.45 + 0.55 * this.gripF);
     const ff = aReq / avail;
     let brake = 0;
     // erst am Bremspunkt des Profils voll bremsen (spät und hart), nicht früh und sanft
