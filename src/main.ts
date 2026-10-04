@@ -6,6 +6,9 @@ import { DRIVERS, teamOf } from './race/field';
 import { AI_LEVELS, driverPace } from './race/field';
 import { RacingLine } from './race/line';
 import { RacingLineVis } from './render/racingLineVis';
+import { RainFx } from './render/rain';
+import { Haptics } from './input/haptics';
+import { SafetyCarModel } from './render/safetyCarModel';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
@@ -34,6 +37,27 @@ import { setupMenu } from './ui/menu';
 import { setupStart } from './ui/start';
 import { RaceHud } from './ui/race';
 
+// ---------------------------------------------------------------- Ladebildschirm mit Startampel
+const ldFill = document.getElementById('ldFill')!;
+const ldText = document.getElementById('ldText')!;
+const ldLights = document.querySelector('.ldLights')!;
+const LD_TIPS = [
+  'Tipp: BOX (Taste P) meldet den Boxenstopp an – die Automatik fährt dich in die Box.',
+  'Tipp: Bei Regen sind Intermediates (I) und Regenreifen (W) deutlich schneller als Slicks.',
+  'Tipp: Die Ideallinie (Fahren → Fahrlinie) zeigt Bremspunkte: rot heißt bremsen.',
+  'Tipp: Unter Safety Car ist das Tempo begrenzt – schließe auf und warte auf Grün.',
+  'Tipp: Im Menü Karriere findest du Saison, Werkstatt und Upgrades für dein Auto.',
+  'Tipp: Aero-Taste Z öffnet die Flügel für mehr Topspeed auf den Geraden.',
+];
+document.getElementById('ldTip')!.textContent = LD_TIPS[Math.floor(Math.random() * LD_TIPS.length)];
+/** Fortschritt anzeigen (0..1) und dem Browser Zeit zum Zeichnen geben, bevor schwere Arbeit weiterläuft. */
+async function loadStep(p: number, text: string): Promise<void> {
+  ldFill.style.width = `${Math.round(p * 100)}%`;
+  ldText.textContent = text;
+  [...ldLights.children].forEach((l, i) => l.classList.toggle('on', p >= (i + 1) / 6));
+  await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+}
+await loadStep(0.05, 'Szene wird aufgebaut');
 const settings = loadSettings();
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const bundle = createScene(canvas);
@@ -41,7 +65,9 @@ const { renderer, scene, camera } = bundle;
 
 const gameMap = createMap(settings.map);
 const worldMap = gameMap.world;
+await loadStep(0.12, 'Strecke wird geladen');
 const scenery = gameMap.track ? await loadSceneryAssets() : null;
+await loadStep(0.3, 'Gelände, Bäume und Tribünen werden gebaut');
 const visuals = gameMap.track ? buildTrackVisuals(scene, gameMap, scenery) : buildWorldVisuals(scene, worldMap, true);
 if (gameMap.track) {
   // Strecke: Gelände ersetzt die mitlaufende Grasfläche; Dunst und große Sichtweite für Berge
@@ -51,14 +77,23 @@ if (gameMap.track) {
   camera.far = 9800;
   camera.updateProjectionMatrix();
 }
+await loadStep(0.55, 'Effekte und Boxencrew');
 const effects = new Effects(scene, worldMap);
 const pitCrew = new PitCrewRenderer(scene);
 let debris: DebrisRenderer | null = null;
 /** Wetter/Tageszeit nach Einstellung anwenden. */
-function applyWeather(): void {
+let lookWeather: typeof settings.weather | null = null;
+function applyWeather(override?: typeof settings.weather): void {
   const fogColor = gameMap.track ? new THREE.Color(gameMap.theme.fog).getHex() : 0xb9c4ca;
-  bundle.setWeather(settings.weather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
+  lookWeather = override ?? settings.weather;
+  bundle.setWeather(lookWeather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
 }
+const rainFx = new RainFx(scene);
+const haptics = new Haptics();
+const scModel = new SafetyCarModel();
+scene.add(scModel.root);
+const windTmp = new THREE.Vector3();
+let debugSc: { x: number; y: number; psi: number } | null = null;
 applyWeather();
 const lapTimer = new LapTimer(gameMap.track);
 let lineVis: RacingLineVis | null = null;
@@ -81,9 +116,19 @@ const unlockAudio = () => audio.unlock();
 for (const ev of ['pointerdown', 'keydown', 'touchend']) window.addEventListener(ev, unlockAudio, { passive: true });
 audio.setVolume(settings.volume);
 const hud = new Hud();
+// Touch-Geräte: Telemetrie-Panel (zwei Canvas je Bild) einmalig ausschalten – spart viel Zeichenarbeit auf dem iPad
+try {
+  if (window.matchMedia?.('(pointer: coarse)').matches && !localStorage.getItem('formel.tel.v1')) {
+    settings.telemetry = false;
+    localStorage.setItem('formel.tel.v1', '1');
+  }
+} catch {
+  /* Speicher nicht verfügbar */
+}
 hud.setTelemetryVisible(settings.telemetry);
 
 // ---------------------------------------------------------------- Fahrzeug / Livree
+await loadStep(0.65, 'Autos werden geladen');
 const assets = await loadCarAssets();
 let car!: CarModel;
 function buildCar(): void {
@@ -224,7 +269,8 @@ function raceConfig(over: Partial<RaceConfig> = {}): RaceConfig {
     seed: (Date.now() & 0xffff) + 1,
     wearScale: settings.wear,
     pitAssist: settings.pitAuto,
-    startCompound: (['soft', 'medium', 'hard'].includes(settings.compound) ? settings.compound : 'medium') as 'soft' | 'medium' | 'hard',
+    safetyCar: settings.safetyCar,
+    startCompound: (['soft', 'medium', 'hard', 'inter', 'wet'].includes(settings.compound) ? settings.compound : 'medium') as RaceConfig['startCompound'],
     ...over,
   };
 }
@@ -262,7 +308,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up, settings.rain);
   physics.setBrakeBias(settings.brakeBias);
   raceHud.pitAuto = settings.pitAuto;
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
@@ -342,7 +388,7 @@ else start.show();
 const menu = setupMenu(settings, controls, {
   onMainMenu: () => raceHud.onMenu?.(),
   onLineChanged: syncRacingLine,
-  onWeatherChanged: applyWeather,
+  onWeatherChanged: () => applyWeather(),
   onTeamChanged: buildCar,
   onCameraChanged: () => {
     rig.setMode(settings.camera, car);
@@ -418,7 +464,7 @@ aeroBtn.addEventListener('pointerdown', (e) => {
 const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
 // Handys starten konservativ (1,5x) und steigern sich, wenn die Bildrate stabil ist
-let pixelRatio = coarse ? Math.min(maxPixelRatio, 1.5) : maxPixelRatio;
+let pixelRatio = coarse ? Math.min(maxPixelRatio, 1.25) : maxPixelRatio;
 let qualityLocked = settings.quality !== 'auto';
 function applyQuality(): void {
   visuals.setDetail?.(settings.quality === 'low' ? 0.4 : coarse && settings.quality !== 'high' ? 0.65 : 1);
@@ -429,10 +475,55 @@ function applyQuality(): void {
   bundle.sun.castShadow = settings.quality !== 'low';
   bundle.setPost(settings.quality === 'high' || (settings.quality === 'auto' && !coarse));
   if (settings.quality === 'low') bundle.setShadow(1024, 20);
-  else if (coarse) bundle.setShadow(2048, 28);
+  else if (coarse) bundle.setShadow(1536, 26);
   else bundle.setShadow(3072, 34);
 }
 applyQuality();
+
+// ---------------------------------------------------------------- Aufwärmen
+let warming = false;
+let hudAcc = 0;
+/**
+ * Vor dem Start einmal alles zeichnen: Shader kompilieren und alle Geometrien/Texturen auf die GPU laden (auch die außerhalb des
+ * Bildes und die nur gelegentlich sichtbaren: Boxencrew, Regen, Safety Car, Ideallinie), damit es später keine Ruckler gibt.
+ */
+async function warmUp(): Promise<void> {
+  await loadStep(0.8, 'Boxencrew und Effekte werden vorbereitet');
+  await pitCrew.loaded;
+  await loadStep(0.88, 'Shader werden kompiliert');
+  const culled = new Map<THREE.Object3D, boolean>();
+  scene.traverse((o) => {
+    culled.set(o, o.frustumCulled);
+    o.frustumCulled = false;
+  });
+  const rainWas = rainFx.lines.visible;
+  const scWas = scModel.root.visible;
+  const lineWas = lineVis?.mesh.visible ?? false;
+  try {
+    rainFx.lines.visible = true;
+    scModel.root.visible = true;
+    if (lineVis) lineVis.mesh.visible = true;
+    pitCrew.warm(true);
+    renderer.compile(scene, camera);
+    bundle.render();
+  } catch {
+    /* Aufwärmen ist nur eine Optimierung */
+  }
+  await loadStep(0.96, 'Grafik wird geladen');
+  try {
+    bundle.render();
+  } catch {
+    /* ignorieren */
+  }
+  pitCrew.warm(false);
+  rainFx.lines.visible = rainWas;
+  scModel.root.visible = scWas;
+  if (lineVis) lineVis.mesh.visible = lineWas;
+  for (const [o, c] of culled) o.frustumCulled = c;
+  await loadStep(1, 'Bereit');
+  ldLights.classList.add('go');
+  await new Promise<void>((r) => setTimeout(r, 450));
+}
 
 // ---------------------------------------------------------------- Hauptschleife
 // ---------------------------------------------------------------- Crash-Wirkung: Zeitlupe, Blitz, Vibration
@@ -447,18 +538,10 @@ function crashFx(s: Float64Array, dt: number): void {
   if (lvl >= 3 && prevLevel < 3 && !document.body.classList.contains('showroom')) {
     slowT = 1.5;
     flash = 1;
-    try {
-      navigator.vibrate?.([60, 40, 120]);
-    } catch {
-      /* ignorieren */
-    }
+    haptics.crash(lvl);
   } else if (lvl >= 2 && prevLevel < 2) {
     flash = Math.max(flash, 0.45);
-    try {
-      navigator.vibrate?.(40);
-    } catch {
-      /* ignorieren */
-    }
+    haptics.crash(lvl);
   }
   prevLevel = lvl;
   void speedKmh;
@@ -543,6 +626,8 @@ function frame(now: number): void {
     debris?.update(s);
     effects.setPixelScale(renderer.domElement.height, camera.fov);
     effects.update(s, dt);
+    haptics.enabled = settings.haptics && !document.body.classList.contains('inmenu') && rig.mode !== 'showroom';
+    haptics.update(performance.now() * 0.001, s[S.speedKmh], effects.kerbWheels, effects.slipMax, Math.max(s[S.scrape], s[S.scrape + 1], s[S.scrape + 2], s[S.scrape + 3]));
     // Kamera-Schütteln bei Einschlägen
     {
       let f = 0;
@@ -558,17 +643,42 @@ function frame(now: number): void {
       }
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
+    {
+      // Regen: Nässe auf Strecke/Boden, Regenstreifen, trübes Licht; Safety Car
+      const wet = s[S.wet];
+      const rain = s[S.rain];
+      visuals.setWet?.(wet);
+      const rainy = lookWeather === 'overcast' && settings.weather !== 'overcast';
+      if (rain > 0.22 && !rainy) applyWeather('overcast');
+      else if (rain < 0.08 && wet < 0.3 && lookWeather !== settings.weather) applyWeather();
+      const sp = s[S.speedKmh] / 3.6;
+      windTmp.set(Math.cos(s[S.psi]) * sp, 0, -Math.sin(s[S.psi]) * sp);
+      rainFx.update(performance.now() * 0.001, camera.position, rig.mode === 'showroom' ? 0 : rain, windTmp);
+      const fs = debugSc;
+      const sc = (s[S.scState] > 0 || !!fs) && rig.mode !== 'showroom';
+      const scx = fs ? fs.x : s[S.scX];
+      const scy = fs ? fs.y : s[S.scY];
+      scModel.update(sc, scx, sc && gameMap.track ? gameMap.track.heightAt(scx, scy) : 0, -scy, fs ? fs.psi : s[S.scPsi], performance.now() * 0.001);
+    }
     bundle.setCinema(rig.mode === 'showroom' ? 0 : s[S.speedKmh] / 3.6, performance.now() * 0.001);
-    hud.update(s, dt, settings.tc, settings.abs);
+    // HUD (viele DOM-Schreibzugriffe) nur mit 30 Hz aktualisieren
+    hudAcc += dt;
+    if (hudAcc >= 1 / 30) {
+      hud.update(s, hudAcc, settings.tc, settings.abs);
+      hudAcc = 0;
+    }
     if (document.body.classList.contains('inmenu')) audio.silence();
     else audio.update(s, dt, physics);
     crashFx(s, dt);
     speedFx.style.opacity = String(Math.min(0.85, Math.max(0, (s[S.speedKmh] - 120) / 260)));
     lapTimer.update(s);
-    if (!loaded) {
-      loaded = true;
-      document.getElementById('loading')!.classList.add('gone');
-      if (autostart) startGame();
+    if (!loaded && !warming) {
+      warming = true;
+      void warmUp().then(() => {
+        loaded = true;
+        document.getElementById('loading')!.classList.add('gone');
+        if (autostart) startGame();
+      });
     }
   }
   const tR = performance.now();
@@ -600,8 +710,8 @@ function frame(now: number): void {
       if (lowCount >= 2 && bundle.postOn()) {
         bundle.setPost(false);
         lowCount = 0;
-      } else if (lowCount >= 2 && pixelRatio > 1) {
-        pixelRatio = Math.max(1, pixelRatio - 0.25);
+      } else if (lowCount >= 2 && pixelRatio > (coarse ? 0.85 : 1)) {
+        pixelRatio = Math.max(coarse ? 0.85 : 1, pixelRatio - 0.2);
         bundle.setPixelRatio(pixelRatio);
         lowCount = 0;
       } else if (lowCount >= 4 && renderer.shadowMap.enabled) {
@@ -609,7 +719,7 @@ function frame(now: number): void {
         bundle.sun.castShadow = false;
         visuals.setDetail?.(0.55);
         lowCount = 0;
-      } else if (highCount >= 8 && pixelRatio < maxPixelRatio) {
+      } else if (!coarse && highCount >= 8 && pixelRatio < maxPixelRatio) {
         pixelRatio = Math.min(maxPixelRatio, pixelRatio + 0.25);
         bundle.setPixelRatio(pixelRatio);
         highCount = 0;
@@ -625,7 +735,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { renderer, scene, setDebugSc: (v: { x: number; y: number; psi: number } | null) => { debugSc = v; }, pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

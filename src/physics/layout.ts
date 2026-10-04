@@ -101,6 +101,14 @@ export const S = {
   pitNext: one(), // gewählte Mischung (Index)
   pitSvc: one(), // gesamte Standzeit des Boxenstopps [s]
   pitDBox: one(), // Abstand zur eigenen Box entlang der Gasse [m] (vor der Box +, danach −); 999 = nicht in der Gasse
+  rain: one(), // Regenintensität 0..1 (Spielerblock)
+  wet: one(), // Streckennässe 0..1
+  scState: one(), // Safety Car: 0 aus, 1 ausgerückt (Feld sammelt sich), 2 Feld geschlossen, 3 kommt in die Box (Restart)
+  scX: one(),
+  scY: one(),
+  scPsi: one(),
+  flag: one(), // Flagge im Sektor des Spielers: 0 keine, 1 gelb, 2 doppelt gelb, 3 Safety Car
+  scTime: one(), // verbleibende Safety-Car-Zeit [s] (Anzeige)
   wallContact: one(), // Anzahl Kontaktpunkte mit Wand/Fremdkörpern
   contacts: 0, // Anfang des Kontaktfeldes (MAX_CONTACTS * CONTACT_STRIDE)
   dents: 0, // Anfang des Dellenfeldes (MAX_DENTS * DENT_STRIDE)

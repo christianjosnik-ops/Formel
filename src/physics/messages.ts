@@ -3,10 +3,11 @@ import type { DriverInput } from './vehicle';
 import type { RaceConfig } from '../race/race';
 import type { CompoundId } from '../config/tyres';
 import type { Upgrades } from '../career';
+import type { RainMode } from '../race/weather';
 
 export type ToWorker =
-  | { type: 'init'; map: MapId; race?: RaceConfig; upgrades?: Upgrades }
-  | { type: 'restart'; race?: RaceConfig; upgrades?: Upgrades }
+  | { type: 'init'; map: MapId; race?: RaceConfig; upgrades?: Upgrades; rain?: RainMode }
+  | { type: 'restart'; race?: RaceConfig; upgrades?: Upgrades; rain?: RainMode }
   | { type: 'input'; input: Partial<DriverInput> }
   | { type: 'reset'; x: number; y: number; psi: number; speed: number }
   | { type: 'recycle'; buf: Float64Array }

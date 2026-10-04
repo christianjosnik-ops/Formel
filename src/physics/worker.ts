@@ -10,6 +10,7 @@ import { CAR_BLOCK, SNAP_SIZE, S } from './layout';
 import { Vehicle } from './vehicle';
 import { World } from './world';
 import { createMap } from '../world/maps';
+import { WeatherSim, type RainMode } from '../race/weather';
 
 /**
  * Physik-Worker: feste Schrittweite mit Zeitakkumulator, unabhängig von der Renderrate.
@@ -22,6 +23,7 @@ let world: World | null = null;
 let director: RaceDirector | null = null;
 let curMap: GameMap | null = null;
 let playerInput = { ...car.input };
+let weather = new WeatherSim('off');
 const pool: Float64Array[] = [];
 let paused = false;
 let timeScale = 1;
@@ -31,8 +33,9 @@ let stepMsAvg = 0.05;
 let hzAvg = PHYS.hz;
 let lastPost = 0;
 
-function build(race?: RaceConfig, upgrades?: Upgrades): void {
+function build(race?: RaceConfig, upgrades?: Upgrades, rain: RainMode = 'off'): void {
   const map = curMap!;
+  weather = new WeatherSim(rain, race?.seed ?? 1);
   const n = race ? selectField(race).length : 1;
   const vs: Vehicle[] = [];
   const fx = upgrades ? effects(upgrades) : null;
@@ -47,6 +50,7 @@ function build(race?: RaceConfig, upgrades?: Upgrades): void {
   }
   car = vs[0];
   Object.assign(car.input, playerInput);
+  for (const v of vs) v.wetness = weather.wet;
   world = new World(map.world, vs);
   if (race) director = new RaceDirector(world, map, race);
   if (fx) {
@@ -72,6 +76,8 @@ function post(): void {
     buf[S.nCars] = n;
     for (let k = 0; k < n; k++) world!.writeCarBlock(buf, S.cars + k * CAR_BLOCK, k, (t) => director!.writeRace(t, 0, k));
   } else buf[S.nCars] = 0;
+  buf[S.rain] = weather.rain;
+  buf[S.wet] = weather.wet;
   buf[S.stepMs] = stepMsAvg;
   buf[S.hz] = hzAvg;
   const msg: FromWorker = { type: 'snap', buf };
@@ -92,6 +98,8 @@ function tick(): void {
     let steps = 0;
     const t0 = performance.now();
     while (acc >= dt && steps < PHYS.maxCatchUpSteps) {
+      weather.update(dt);
+      for (const v of world.vehicles) v.wetness = weather.wet;
       director?.update(dt);
       world.step(dt);
       acc -= dt;
@@ -119,13 +127,13 @@ ctx.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (m.type) {
     case 'init': {
       curMap = createMap(m.map);
-      build(m.race, m.upgrades);
+      build(m.race, m.upgrades, m.rain);
       const ready: FromWorker = { type: 'ready', hz: PHYS.hz };
       ctx.postMessage(ready);
       break;
     }
     case 'restart':
-      build(m.race, m.upgrades);
+      build(m.race, m.upgrades, m.rain);
       break;
     case 'input':
       Object.assign(playerInput, m.input);

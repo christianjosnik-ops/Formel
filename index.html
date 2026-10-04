@@ -18,7 +18,13 @@
 
   <div id="speedfx"></div>
   <div id="flash"></div>
-  <div id="loading"><div class="spin"></div><div>Physik startet …</div></div>
+  <div id="loading">
+    <div class="ldLogo">FORMEL<b>2026</b></div>
+    <div class="ldLights"><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="ldBar"><div id="ldFill"></div></div>
+    <div id="ldText">Lade …</div>
+    <div id="ldTip"></div>
+  </div>
 
   <!-- HUD -->
   <div id="hud">
@@ -89,7 +95,8 @@
 
   <!-- Rennen: Rangliste, Startampel, Ziel -->
   <div id="race" class="hidden">
-    <div id="raceInfo"><span id="raceLap">RUNDE 1/3</span><span id="racePos">P1/22</span></div>
+    <div id="raceInfo"><span id="raceLap">RUNDE 1/3</span><span id="racePos">P1/22</span><span id="raceWx" class="hidden"></span></div>
+    <div id="flagBar" class="hidden"></div>
     <div id="board"></div>
     <div id="lights"><i></i><i></i><i></i><i></i><i></i></div>
     <div id="banner"></div>
@@ -98,7 +105,7 @@
       <div id="tyreBadge">M</div>
       <div id="tyreBars"><div class="tb"><i></i><b>VL</b></div><div class="tb"><i></i><b>VR</b></div><div class="tb"><i></i><b>HL</b></div><div class="tb"><i></i><b>HR</b></div></div>
       <div id="pitCtl">
-        <div id="cmpSel"><button data-c="soft" class="c-soft">S</button><button data-c="medium" class="c-medium on">M</button><button data-c="hard" class="c-hard">H</button></div>
+        <div id="cmpSel"><button data-c="soft" class="c-soft">S</button><button data-c="medium" class="c-medium on">M</button><button data-c="hard" class="c-hard">H</button><button data-c="inter" class="c-inter">I</button><button data-c="wet" class="c-wet">W</button></div>
         <button id="btnBox">BOX</button>
       </div>
     </div>
@@ -175,6 +182,7 @@
         <h3>Fahrhilfen</h3>
         <div class="row"><label>Traktionskontrolle</label><select id="selTc"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
         <div class="row"><label>ABS</label><select id="selAbs"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
+        <div class="row"><label>Vibration</label><select id="selHaptic"><option value="1">Ein (Kerbs, Aufprall)</option><option value="0">Aus</option></select></div>
         <div class="row"><label>Lenkhilfe</label><select id="selSteer"><option value="0">Aus</option><option value="1">Mittel</option><option value="2">Stark</option></select></div>
         <div class="row"><label>Ideallinie</label><select id="selLine"><option value="0">Aus</option><option value="1">Ein (grün Gas · rot Bremsen)</option></select></div>
         <p class="muted">Die Physik bleibt identisch, Hilfen filtern nur die Eingaben.</p>

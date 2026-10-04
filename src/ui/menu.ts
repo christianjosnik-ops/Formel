@@ -63,6 +63,7 @@ export function setupMenu(settings: Settings, controls: Controls, hooks: MenuHoo
     settings.racingLine = v === '1';
     hooks.onLineChanged?.();
   });
+  bindSelect('selHaptic', () => (settings.haptics ? '1' : '0'), (v) => (settings.haptics = v === '1'));
   bindSelect('selWeather', () => settings.weather, (v) => {
     settings.weather = v as Settings['weather'];
     hooks.onWeatherChanged?.();

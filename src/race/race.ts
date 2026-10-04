@@ -7,7 +7,8 @@ import { AIDriver, type AIMode, type Rival } from './ai';
 import { AI_LEVELS, driverPace, DRIVERS, type DriverData, type TeamData, teamOf, teamPerformance } from './field';
 import { RacingLine } from './line';
 import { PIT } from '../world/track';
-import { COMPOUND_ORDER, type CompoundId } from '../config/tyres';
+import { SafetyCarSim } from './safetycar';
+import { COMPOUND_ORDER, wetCompound, wetGrip, type CompoundId } from '../config/tyres';
 
 export type GridMode = 'pole' | 'mid' | 'last' | 'random';
 
@@ -29,6 +30,8 @@ export interface RaceConfig {
   wearScale?: number;
   /** Boxen-Automatik für den Spieler (Einfahrt, Halt, Ausfahrt per KI-Steuerung). */
   pitAssist?: boolean;
+  /** Safety Car bei Unfällen (Standard an). */
+  safetyCar?: boolean;
   /** Startreifen des Spielers. */
   startCompound?: CompoundId;
   /** Upgrades des Spielers (Stufen 0..5). */
@@ -36,6 +39,12 @@ export interface RaceConfig {
 }
 
 export interface Entrant {
+  /** Höchstgeschwindigkeit unter Safety Car [m/s] (Infinity = frei). */
+  scCap: number;
+  /** Unfall dieses Autos ist schon gemeldet. */
+  incidentSeen: boolean;
+  /** Sekunden, seit die Mischung nicht mehr zur Streckennässe passt (KI wechselt nach Verzögerung). */
+  wrongT: number;
   vi: number;
   driver: number; // Index in DRIVERS
   data: DriverData;
@@ -122,6 +131,7 @@ export class RaceDirector {
   private winnerTime = -1;
   private readonly cpCount: number;
   readonly order: number[] = [];
+  readonly sc: SafetyCarSim;
 
   constructor(
     private readonly world: World,
@@ -131,6 +141,7 @@ export class RaceDirector {
   ) {
     this.track = map.track!;
     this.line = lineCache ?? new RacingLine(this.track);
+    this.sc = new SafetyCarSim(this.track, this.line);
     this.pitDriver = new AIDriver(this.line, { pace: 1, consistency: 1, racecraft: 0, seed: 99 });
     this.rnd = lcg(cfg.seed);
     this.cpCount = Math.ceil(this.track.length / CP_LEN) + 2;
@@ -178,6 +189,9 @@ export class RaceDirector {
         gapAhead: 0,
         gapBehind: 0,
         stopped: 0,
+        scCap: Infinity,
+        incidentSeen: false,
+        wrongT: 0,
         slowT: 0,
         cpTimes: new Float64Array((cfg.laps + 3) * this.cpCount).fill(-1),
         cpNext: 0,
@@ -193,7 +207,11 @@ export class RaceDirector {
       });
       v.wearScale = cfg.wearScale ?? 1;
       const r0 = this.rnd();
-      v.fitTyres(isPlayer ? cfg.startCompound ?? 'medium' : r0 < 0.3 ? 'soft' : r0 < 0.8 ? 'medium' : 'hard');
+      const wc = wetCompound(v.wetness);
+      const dry = r0 < 0.3 ? 'soft' : r0 < 0.8 ? 'medium' : 'hard';
+      // Start auf nasser Strecke: KI wählt passende Regenreifen (an der Grenze zwischen Inter und Regen mit etwas Streuung)
+      const wetPick: CompoundId | null = wc === 'wet' ? (v.wetness < 0.7 && r0 < 0.4 ? 'inter' : 'wet') : wc === 'inter' ? (v.wetness > 0.5 && r0 > 0.8 ? 'wet' : 'inter') : null;
+      v.fitTyres(isPlayer ? cfg.startCompound ?? (wetPick ?? 'medium') : (wetPick ?? dry));
     }
     this.placeOnGrid();
   }
@@ -367,6 +385,8 @@ export class RaceDirector {
     this.order.length = 0;
     for (const e of ranked) this.order.push(e.vi);
 
+    this.updateSafety(dt, ranked);
+
     // Zielüberfahrt
     const finishDist = this.cfg.laps * L;
     for (const e of active) {
@@ -433,14 +453,16 @@ export class RaceDirector {
       // Gummiband: Feld bleibt beim Spieler (enges Rad-an-Rad-Rennen); zu weit Zurückliegende holen etwas auf,
       // zu weit Enteilte drosseln. Nur wenige Prozent Tempo, die Physik bleibt unverändert.
       let rubber = 1;
-      if (!e.isPlayer && player && !player.out) {
+      if (!e.isPlayer && player && !player.out && !this.sc.active) {
         const L2 = t.length;
         let d = e.dist - player.dist;
         d = ((((d + L2 / 2) % L2) + L2) % L2) - L2 / 2;
         if (d < -40) rubber = 1 + Math.min(0.08, ((-d - 40) / 400) * 0.08);
         else if (d > 60) rubber = 1 - Math.min(0.1, ((d - 60) / 400) * 0.1);
       }
+      e.ai.setGrip(wetGrip(v.compound, v.wetness));
       e.ai.update(dt, v, mode, rivals, startEase * rubber);
+      if (e.scCap < Infinity && e.pit === 0) this.limitSpeed(v, e.scCap);
       // Streckenposten: festgefahrene KI zurück auf die Linie
       if (e.ai.stuckTime > 7 && !v.retired) {
         const i = (e.idx + 6) % t.n;
@@ -457,6 +479,65 @@ export class RaceDirector {
     }
   }
 
+  /** Bremst/nimmt Gas weg, wenn das Auto schneller als cap [m/s] fährt. */
+  private limitSpeed(v: Vehicle, cap: number): void {
+    const speed = Math.hypot(v.u, v.v);
+    const over = speed - cap;
+    if (over > 0) {
+      v.input.throttle = 0;
+      v.input.brake = Math.max(v.input.brake, Math.min(0.75, 0.1 + over * 0.09));
+    } else if (over > -2.5) v.input.throttle *= Math.max(0, -over / 2.5);
+  }
+
+  /** Unfälle, gelbe Flaggen, Safety Car und Tempobegrenzungen. */
+  private updateSafety(dt: number, ranked: Entrant[]): void {
+    const sc = this.sc;
+    const t = this.track;
+    const wet = this.world.vehicles[0]?.wetness ?? 0;
+    if (this.cfg.safetyCar !== false && this.state === 'racing') {
+      const remaining = this.cfg.laps - (ranked.find((r) => !r.out)?.dist ?? 0) / t.length;
+      for (const e of this.entrants) {
+        if (e.out) continue;
+        const v = this.world.vehicles[e.vi];
+        const sp = Math.hypot(v.u, v.v);
+        const hit = e.pit === 0 && this.time > 12 && ((v.retired && sp < 6) || e.slowT > 2.5);
+        if (hit) {
+          sc.incident(t.s[e.idx], !!v.retired || e.slowT > 4);
+          if (!e.incidentSeen) {
+            e.incidentSeen = true;
+            if (remaining > 1.8 && this.rnd() < 0.8) {
+              const lead = ranked.find((r) => !r.out && !r.finished);
+              if (lead) sc.deploy(lead.dist, wet);
+            }
+          }
+        } else if (!v.retired && e.slowT < 0.5) e.incidentSeen = false;
+      }
+    }
+    sc.update(dt, wet);
+    // Tempobegrenzung: jedes Auto hinter SC bzw. Vordermann
+    let ref = -1;
+    for (const e of ranked) {
+      e.scCap = Infinity;
+      if (!sc.active || e.out || e.finished || e.pit >= 2) continue;
+      let refDist: number;
+      let refSpeed: number;
+      if (ref < 0) {
+        refDist = sc.dist;
+        refSpeed = sc.speed;
+      } else {
+        const r = this.entrants[ref];
+        refDist = r.dist;
+        const rv = this.world.vehicles[r.vi];
+        refSpeed = Math.hypot(rv.u, rv.v);
+      }
+      // auf Runde Zurückliegende zählen den Abstand zum nächsten Auto davor in der gleichen Runde
+      let gap = refDist - e.dist - 5;
+      if (gap > t.length * 0.5) gap -= Math.floor(gap / t.length) * t.length;
+      e.scCap = sc.cap(refSpeed, gap, wet);
+      ref = this.entrants.indexOf(e);
+    }
+  }
+
   private rel(idx: number): number {
     const t = this.track;
     return t.s[idx] > t.length / 2 ? t.s[idx] - t.length : t.s[idx];
@@ -464,6 +545,8 @@ export class RaceDirector {
 
   /** Wahl der nächsten Mischung anhand der Restdistanz. */
   private pickCompound(e: Entrant): CompoundId {
+    const wc = wetCompound(this.world.vehicles[e.vi].wetness);
+    if (wc) return wc;
     const rem = this.cfg.laps - e.dist / this.track.length;
     return rem <= 6 ? 'soft' : rem <= 11 ? 'medium' : 'hard';
   }
@@ -499,7 +582,16 @@ export class RaceDirector {
       let wmax = 0;
       for (let i = 0; i < 4; i++) wmax = Math.max(wmax, v.tyreWear[i]);
       const remaining = this.cfg.laps - e.dist / t.length;
-      if (!e.isPlayer && this.cfg.laps >= 2 && e.pitStops < 3 && wmax > e.pitThr && remaining > 1.4 && !e.finished && !v.retired) {
+      const w = v.wetness;
+      // Wetterwechsel: Mischung passt nicht mehr zur Streckennässe -> nach kurzer, je Fahrer verschiedener Verzögerung an die Box
+      const wrong = (v.compound === 'inter' ? w > 0.8 || w < 0.1 : v.compound === 'wet' ? w < 0.35 : w > 0.3);
+      e.wrongT = wrong ? e.wrongT + dt : 0;
+      const wrongDelay = 4 + (e.pitThr - 0.6) * 50;
+      if (!e.isPlayer && this.cfg.laps >= 2 && e.pitStops < 4 && remaining > 0.7 && !e.finished && !v.retired && e.wrongT > wrongDelay) {
+        e.pit = 1;
+        e.nextCompound = this.pickCompound(e);
+        e.wrongT = 0;
+      } else if (!e.isPlayer && this.cfg.laps >= 2 && e.pitStops < 3 && wmax > e.pitThr && remaining > 1.4 && !e.finished && !v.retired) {
         e.pit = 1;
         e.nextCompound = this.pickCompound(e);
       }
@@ -603,6 +695,8 @@ export class RaceDirector {
     if (e.pit === 3) {
       v.input.throttle = 0;
       v.input.brake = 1;
+    } else if (e.scCap < Infinity && e.pit === 0) {
+      this.limitSpeed(v, e.scCap * 1.03);
     } else if (e.limiter) {
       const speed = Math.hypot(v.u, v.v);
       const over = speed - PIT.limit;
@@ -721,6 +815,13 @@ export class RaceDirector {
     const pz = this.track.pitZone;
     const veh = this.world.vehicles[e.vi];
     const inLane = veh && this.track.lateral(e.idx, veh.x, veh.y) > this.track.wl[e.idx] + 0.9 && rel > pz.full0 - 10 && rel < pz.full1 + 10;
+    const sc = this.sc;
+    out[base + S.scState] = sc.state;
+    out[base + S.scX] = sc.x;
+    out[base + S.scY] = sc.y;
+    out[base + S.scPsi] = sc.psi;
+    out[base + S.scTime] = sc.state ? sc.t : 0;
+    out[base + S.flag] = sc.flagAt(this.track.s[e.idx]);
     out[base + S.pitDBox] = e.pit === 3 ? 0 : e.pit >= 2 || inLane ? box.s - rel : 999;
   }
 }
