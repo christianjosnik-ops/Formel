@@ -472,7 +472,7 @@ function addGrandstandModules(scene: THREE.Scene, t: Track, s0: number, s1: numb
     const im = new THREE.InstancedMesh(part.geo, part.mat, mats.length);
     mats.forEach((m, k) => im.setMatrixAt(k, m));
     im.computeBoundingSphere();
-    im.castShadow = true;
+    im.castShadow = !COARSE;
     im.receiveShadow = true;
     scene.add(im);
   }
@@ -688,7 +688,7 @@ function addPitBuilding(scene: THREE.Scene, t: Track, s0: number, s1: number, si
           im.setColorAt(k, bc);
         }
       });
-      im.castShadow = true;
+      im.castShadow = !COARSE;
       im.receiveShadow = true;
       im.computeBoundingSphere();
       scene.add(im);
@@ -821,7 +821,7 @@ function addPitWall(scene: THREE.Scene, t: Track, scenery: SceneryAssets | null 
           im.setColorAt(k, sc2);
         }
       });
-      im.castShadow = true;
+      im.castShadow = !COARSE;
       im.receiveShadow = true;
       im.computeBoundingSphere();
       scene.add(im);
@@ -836,7 +836,7 @@ function addPitWall(scene: THREE.Scene, t: Track, scenery: SceneryAssets | null 
   const bands = new THREE.InstancedMesh(new THREE.PlaneGeometry(6.0, 0.34), new THREE.MeshBasicMaterial({}), n);
   const boardsGeo = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.55, 0.05), std(0xf0f0f0, 0.6), n);
   for (const m of [deck, canopy, posts, screens, frames, bands, boardsGeo]) {
-    m.castShadow = m !== screens && m !== bands;
+    m.castShadow = !COARSE && m !== screens && m !== bands;
     m.receiveShadow = true;
   }
   const m4 = new THREE.Matrix4();
@@ -948,7 +948,7 @@ function addPitWall(scene: THREE.Scene, t: Track, scenery: SceneryAssets | null 
       for (const part of lightParts) {
         const im = new THREE.InstancedMesh(part.geo, part.mat, 1);
         im.setMatrixAt(0, lm);
-        im.castShadow = true;
+        im.castShadow = !COARSE;
         scene.add(im);
       }
       return;
@@ -1094,6 +1094,47 @@ function buildDistanceGrid(t: Track, x0: number, y0: number, nx: number, ny: num
   return { d, h };
 }
 
+/** Touch-Gerät (iPad/Handy): reduzierte Geometrie, weniger Schattenwerfer. */
+const COARSE = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+
+/**
+ * Große Instanzen-Meshes (über die ganze Strecke verteilt) in räumliche Zellen teilen: Frustum-Culling arbeitet je Mesh,
+ * ein einziges Mesh mit tausenden Instanzen würde sonst immer komplett gezeichnet (auf dem iPad der größte Posten).
+ */
+function chunkLargeInstances(scene: THREE.Scene, skip: Set<THREE.Object3D>, cell = 220, minCount = 260): void {
+  const m = new THREE.Matrix4();
+  const c = new THREE.Color();
+  for (const obj of [...scene.children]) {
+    const im = obj as THREE.InstancedMesh;
+    if (!im.isInstancedMesh || skip.has(im) || im.count < minCount) continue;
+    const groups = new Map<string, number[]>();
+    for (let k = 0; k < im.count; k++) {
+      im.getMatrixAt(k, m);
+      const key = `${Math.floor(m.elements[12] / cell)}:${Math.floor(m.elements[14] / cell)}`;
+      (groups.get(key) ?? groups.set(key, []).get(key)!).push(k);
+    }
+    if (groups.size < 2) continue;
+    for (const ids of groups.values()) {
+      const n = new THREE.InstancedMesh(im.geometry, im.material, ids.length);
+      ids.forEach((src, j) => {
+        im.getMatrixAt(src, m);
+        n.setMatrixAt(j, m);
+        if (im.instanceColor) {
+          im.getColorAt(src, c);
+          n.setColorAt(j, c);
+        }
+      });
+      n.castShadow = im.castShadow;
+      n.receiveShadow = im.receiveShadow;
+      n.renderOrder = im.renderOrder;
+      n.computeBoundingSphere();
+      scene.add(n);
+    }
+    scene.remove(im);
+    im.dispose();
+  }
+}
+
 /** Materialien, die bei Nässe dunkler und glänzender werden. */
 interface WetMat {
   m: THREE.MeshStandardMaterial;
@@ -1118,6 +1159,8 @@ export interface TrackVisuals {
 }
 
 export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: SceneryAssets | null = null): TrackVisuals {
+  // Touch-Geräte (iPad/Handy): deutlich weniger Geometrie und keine Baumschatten (Schattenpass und Dreiecke sind der Engpass)
+  const coarse = COARSE;
   const t = map.track!;
   const th = map.theme;
   const seed = th.seed;
@@ -1642,6 +1685,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
         g.fillRect(0, 0, 64, 64);
         return new THREE.CanvasTexture(c);
       })();
+      const blobItems: Array<{ x: number; y: number; h: number }> = [];
       const blobGeo = new THREE.PlaneGeometry(1, 1);
       const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, fog: true });
       const isFoliage = (m: THREE.Material) => /Leaf|Needle|Bush/i.test(m.name);
@@ -1665,26 +1709,11 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           im.receiveShadow = shadow;
           add(im, items.length);
         }
-        // weicher Kontaktschatten unter dem Baum (die Schattenkarte deckt nur die Nähe des Autos ab)
-        if (name.startsWith('tree_')) {
-          const blob = new THREE.InstancedMesh(blobGeo, blobMat, items.length);
-          items.forEach((it, k) => {
-            const r = it.h * 0.42;
-            e.set(-Math.PI / 2, 0, 0);
-            q.setFromEuler(e);
-            pos.set(it.x + it.h * 0.22, heightAt(it.x, it.y) + 0.06, -it.y - it.h * 0.1);
-            scl.set(r * 2, r * 2, 1);
-            m4.compose(pos, q, scl);
-            blob.setMatrixAt(k, m4);
-          });
-          blob.computeBoundingSphere();
-          blob.frustumCulled = true;
-          blob.renderOrder = 1;
-          scene.add(blob);
-        }
+        // weicher Kontaktschatten unter dem Baum (die Schattenkarte deckt nur die Nähe des Autos ab); später je Zelle gebündelt
+        if (name.startsWith('tree_')) for (const it of items) blobItems.push(it);
       };
       // Bäume
-      const maxHi = 320;
+      const maxHi = coarse ? 110 : 320;
       let hl = hi;
       let overflow: Tree[] = [];
       if (hl.length > maxHi) {
@@ -1709,18 +1738,18 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           im.computeBoundingSphere();
           scene.add(im);
           treeMeshes.push({ im, total: n });
-        }, true);
+        }, !coarse);
       }
       // Mittel- und Ferndistanz: Blender-LOD-Bäume (je ~250 Flächen), in Chunks für Frustum-Culling
       {
         const chunkMap = new Map<string, Map<string, Tree[]>>();
         const lodB = ['tree_broad_1_lod', 'tree_broad_2_lod', 'tree_broad_3_lod'];
         const lodC = ['tree_conifer_1_lod', 'tree_conifer_2_lod'];
-        const lodItems = [...list, ...overflow].sort((a, b) => (a.d ?? 0) - (b.d ?? 0)).slice(0, 5600);
+        const lodItems = [...list, ...overflow].sort((a, b) => (a.d ?? 0) - (b.d ?? 0)).slice(0, coarse ? 3200 : 5600);
         for (const tr of lodItems) {
           const pool = tr.con ? lodC : lodB;
           const nm = pool[Math.floor(rnd() * pool.length)];
-          const key = `${Math.floor(tr.x / 450)}:${Math.floor(tr.y / 450)}`;
+          const key = `${Math.floor(tr.x / (coarse ? 340 : 240))}:${Math.floor(tr.y / (coarse ? 340 : 240))}`;
           const cm = chunkMap.get(key) ?? chunkMap.set(key, new Map()).get(key)!;
           (cm.get(nm) ?? cm.set(nm, []).get(nm)!).push(tr);
         }
@@ -1730,15 +1759,38 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
               im.computeBoundingSphere();
               scene.add(im);
               treeMeshes.push({ im, total: n });
-            }, true);
+            }, false);
           }
+        }
+      }
+      // Kontaktschatten: ein Mesh je 240-m-Zelle
+      {
+        const cells = new Map<string, Array<{ x: number; y: number; h: number }>>();
+        for (const it of blobItems) {
+          const key = `${Math.floor(it.x / 240)}:${Math.floor(it.y / 240)}`;
+          (cells.get(key) ?? cells.set(key, []).get(key)!).push(it);
+        }
+        for (const arr of cells.values()) {
+          const blob = new THREE.InstancedMesh(blobGeo, blobMat, arr.length);
+          arr.forEach((it, k) => {
+            const r = it.h * 0.42;
+            e.set(-Math.PI / 2, 0, 0);
+            q.setFromEuler(e);
+            pos.set(it.x + it.h * 0.22, heightAt(it.x, it.y) + 0.06, -it.y - it.h * 0.1);
+            scl.set(r * 2, r * 2, 1);
+            m4.compose(pos, q, scl);
+            blob.setMatrixAt(k, m4);
+          });
+          blob.computeBoundingSphere();
+          blob.renderOrder = 1;
+          scene.add(blob);
         }
       }
       // Büsche und Grasbüschel in Chunks (Frustum-Culling), am Streckenrand
       type Tuft = { x: number; y: number; h: number; tint: number };
       const chunks = new Map<string, Map<string, Tuft[]>>();
       const put = (name: string, tf: Tuft) => {
-        const key = `${Math.floor(tf.x / 140)}:${Math.floor(tf.y / 140)}`;
+        const key = `${Math.floor(tf.x / (coarse ? 230 : 140))}:${Math.floor(tf.y / (coarse ? 230 : 140))}`;
         const m = chunks.get(key) ?? chunks.set(key, new Map()).get(key)!;
         (m.get(name) ?? m.set(name, []).get(name)!).push(tf);
       };
@@ -1748,9 +1800,9 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           const edge = sd === 1 ? t.wl[i] + t.barrierL[i] : t.wr[i] + t.barrierR[i];
           const sv = t.s[i];
           const inStand = stands.some((z) => z.side === sd && sv > z.s0 - 6 && sv < z.s1 + 6);
-          const nTuft = 5 + (rnd() < 0.5 ? 1 : 0);
+          const nTuft = coarse ? 2 + (rnd() < 0.5 ? 1 : 0) : 5 + (rnd() < 0.5 ? 1 : 0);
           for (let k = 0; k < nTuft; k++) {
-            const lat = edge + 1.2 + Math.pow(rnd(), 1.6) * 38;
+            const lat = edge + 1.2 + Math.pow(rnd(), 1.6) * (coarse ? 24 : 38);
             if (inStand && lat < edge + 42) continue;
             const x = t.x[i] + t.nx(i) * sd * lat + (rnd() - 0.5) * 3;
             const y = t.y[i] + t.ny(i) * sd * lat + (rnd() - 0.5) * 3;
@@ -1804,7 +1856,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
               im.setMatrixAt(k, m4);
               if (/Leaf|Bush/i.test(part.mat.name)) im.setColorAt(k, tintCol(0.7 + brnd() * 0.5, 0.95));
             });
-            im.castShadow = shadow;
+            im.castShadow = shadow && !COARSE;
             im.receiveShadow = shadow;
             im.computeBoundingSphere();
             scene.add(im);
@@ -2015,6 +2067,8 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     m.frustumCulled = false;
     scene.add(m);
   }
+
+  chunkLargeInstances(scene, new Set(treeMeshes.map((t) => t.im)));
 
   return {
     setWet: (w: number) => {

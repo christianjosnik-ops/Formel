@@ -62,3 +62,9 @@ Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientiere
 - **Nachbearbeitung** (`src/render/scene.ts`, ein Shader-Pass nach Bloom): radiale Bewegungsunschärfe ab ~130 km/h, leichte chromatische Aberration, Filmkorn (in Schatten stärker), Sonnenglanz mit schwachem Objektiv-Geist, Farbgrading (Grün entsättigt Richtung Oliv, Schatten kühl, Lichter warm; je Wetter eigene Werte).
 - **Bäume** (`tools/make_scenery.py`): Laubblatt-Cluster aus ~1900 echten Blättern (Mittelrippe, Seitenadern, gezähnter Rand, innen dunkel/außen hell, 1024²) und Nadelzweige mit Seitenzweigen, tausenden feinen Nadeln und deckender Unterlage (damit sie in Mipmaps nicht verschwinden). Weiche Kontaktschatten unter jedem Baum (`trackVisuals.ts`), da die Schattenkarte nur das Umfeld des Autos abdeckt.
 - **Zuschauer**: Schattierung nach oben, Stoffkorn, dunkle Kontur je Figur. **Asphalt**: geringere Rauheit für Himmelsreflexe unter flachem Blick.
+
+## Performance (iPad/Handy)
+
+- **Touch-Pfad** (`(pointer: coarse)`): weniger Geometrie (110 statt 320 Detail-Bäume, 3200 statt 5600 LOD-Bäume, halbe Grasdichte und nur 24 m Streifen), keine Schattenwerfer außer Auto, Boxenanlage und Pitwall (Baumschatten ersetzen weiche Kontaktschatten), Schattenkarte 1536², Startauflösung 1,25× (adaptiv nach unten bis 0,85×, kein Hochskalieren mehr), HUD nur mit 30 Hz, Telemetrie-Panel einmalig aus.
+- **Chunking** (`chunkLargeInstances`): große Instanzen-Meshes (Reifenstapel, Hecken, Pfosten …) werden in 220-m-Zellen geteilt, damit Frustum-Culling greift. Messung Monza (iPad-Emulation, 1180×820 @2×): 3,06 Mio. → 0,53 Mio. Dreiecke je Bild, 554 → 233 Draw-Calls.
+- **Ladebildschirm** mit Startampel (fünf Lichter = Fortschritt, Tipps): danach wird einmal die gesamte Szene ohne Culling gezeichnet (Shader kompilieren, Geometrien/Texturen hochladen, auch Boxencrew, Regen, Safety Car, Ideallinie), damit es im Spiel keine Ruckler beim ersten Sichtbarwerden gibt.

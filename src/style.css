@@ -23,7 +23,7 @@ button:active { background: rgba(255,255,255,0.18); }
 .hidden { display: none !important; }
 .muted { color: var(--mut); font-size: 12px; }
 
-#loading { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; background: var(--bg); z-index: 50; transition: opacity .4s; }
+#loading { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 18px; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 40%, #1a1d26 0%, #07080b 70%); z-index: 50; transition: opacity .6s; }
 #loading.gone { opacity: 0; pointer-events: none; }
 .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #233; border-top-color: var(--acc); animation: sp 0.9s linear infinite; }
 @keyframes sp { to { transform: rotate(360deg); } }
@@ -417,3 +417,17 @@ body.slowmo::after { content: "AUFPRALL"; position: fixed; left: 50%; top: 14%; 
 #flagBar.sc { background: #ff9a00; animation: blink 1.1s infinite; }
 #flagBar.green { background: #28c24f; color: #fff; }
 @media (max-height: 520px) { #flagBar { top: calc(36px + var(--safe-t)); font-size: 12px; padding: 3px 12px; min-width: 140px; } }
+
+/* ---- Ladebildschirm mit Startampel ---- */
+.ldLogo { font-size: 40px; font-weight: 300; letter-spacing: 12px; font-style: italic; animation: ldIn 0.9s ease-out both; }
+.ldLogo b { font-weight: 900; color: #e10600; margin-left: 12px; }
+.ldLights { display: flex; gap: 14px; padding: 12px 20px; background: #0c0d11; border: 1px solid #262a33; border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.6); }
+.ldLights i { width: 34px; height: 34px; border-radius: 50%; background: #2a0b0b; box-shadow: inset 0 3px 6px rgba(0,0,0,.7); transition: background .25s, box-shadow .25s; }
+.ldLights i.on { background: #ff2418; box-shadow: 0 0 22px 4px rgba(255,36,24,.65), inset 0 -4px 8px rgba(120,0,0,.5); }
+.ldLights.go i { background: #2a0b0b; box-shadow: inset 0 3px 6px rgba(0,0,0,.7); }
+.ldBar { width: min(380px, 70vw); height: 4px; border-radius: 2px; background: #1c1f27; overflow: hidden; }
+#ldFill { height: 100%; width: 0; background: linear-gradient(90deg, #e10600, #ff8a7a); transition: width .35s ease-out; }
+#ldText { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #aab4c3; min-height: 1.4em; }
+#ldTip { max-width: min(460px, 82vw); text-align: center; font-size: 12px; line-height: 1.5; color: #7d8794; min-height: 3em; }
+@keyframes ldIn { from { opacity: 0; transform: translateY(14px); letter-spacing: 24px; } to { opacity: 1; transform: none; letter-spacing: 12px; } }
+@media (max-height: 520px) { .ldLogo { font-size: 26px; letter-spacing: 8px; } .ldLights i { width: 22px; height: 22px; } .ldLights { padding: 8px 14px; gap: 9px; } #loading { gap: 10px; } #ldTip { display: none; } }

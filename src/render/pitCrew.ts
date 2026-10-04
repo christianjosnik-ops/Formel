@@ -77,12 +77,14 @@ export class PitCrewRenderer {
   private readonly crews: Crew[] = [];
   private readonly active = new Map<number, Crew>();
   private ready = false;
+  /** Wird erfüllt, sobald das Crew-Modell geladen (oder das Laden fehlgeschlagen) ist. */
+  readonly loaded: Promise<void>;
   /** Vorführung (Debug): >= 0 erzwingt die Animation am Spielerauto bei diesem Fortschritt (0..1 des ganzen Clips). */
   demo = -1;
 
   constructor(scene: THREE.Scene) {
     const base = import.meta.env.BASE_URL;
-    new GLTFLoader()
+    this.loaded = new GLTFLoader()
       .loadAsync(`${base}models/pitcrew.glb`)
       .then((gltf) => {
         const clip = gltf.animations[0];
@@ -94,7 +96,18 @@ export class PitCrewRenderer {
         }
         this.ready = true;
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .then(() => undefined);
+  }
+
+  /** Aufwärmen: Crews kurz sichtbar machen (Shader kompilieren, Geometrie hochladen), danach wieder verstecken. */
+  warm(on: boolean): void {
+    for (const c of this.crews) {
+      if (on) {
+        c.mixer.setTime(T_PRE + 1.0);
+        c.group.visible = true;
+      } else if (!Array.from(this.active.values()).includes(c)) c.group.visible = false;
+    }
   }
 
   /** Zeit im Clip für ein Auto, oder -1 wenn keine Crew gebraucht wird. */
