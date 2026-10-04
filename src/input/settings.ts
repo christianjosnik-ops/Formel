@@ -24,6 +24,10 @@ export interface Settings {
   autoAero: boolean;
   /** Boxen-Automatik: Auto fährt Einfahrt, Halt und Ausfahrt selbst. */
   pitAuto: boolean;
+  /** Ideallinie als Fahrhilfe einblenden. */
+  racingLine: boolean;
+  /** Wetter / Tageszeit. */
+  weather: 'sunny' | 'overcast' | 'evening';
   trackLimits: boolean;
   /** Reifenverschleiß: 0 aus, 1 normal, 2 hoch. */
   wear: number;
@@ -56,6 +60,8 @@ export const DEFAULTS: Settings = {
   field: 22,
   autoAero: true,
   pitAuto: true,
+  racingLine: false,
+  weather: 'sunny',
   trackLimits: false,
   wear: 1,
   volume: 0.8,

@@ -21,7 +21,18 @@ export interface SceneBundle {
   postOn: () => boolean;
   /** Schattenkarte: Auflösung und halbe Kantenlänge [m]. */
   setShadow: (size: number, half: number) => void;
+  /** Wetter/Tageszeit: Himmel, Sonne, Umgebungslicht, Belichtung und Nebel. */
+  setWeather: (w: Weather, fogColor: number, fogNear: number, fogFar: number) => void;
 }
+
+export type Weather = 'sunny' | 'overcast' | 'evening';
+
+/** Lichtstimmungen (Himmelstextur aus tools/make_sky.py mit gleicher Sonnenrichtung). */
+const WEATHER: Record<Weather, { sky: string; dir: [number, number, number]; sun: number; sunInt: number; hemiSky: number; hemiGround: number; hemiInt: number; exposure: number; env: number; fog: number | null; fogK: number; bloom?: number }> = {
+  sunny: { sky: 'sky.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xfff1dc, sunInt: 2.6, hemiSky: 0xcfe4ff, hemiGround: 0x55504a, hemiInt: 0.55, exposure: 1.0, env: 1.0, fog: null, fogK: 1 },
+  overcast: { sky: 'sky_overcast.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xe8eef5, sunInt: 0.85, hemiSky: 0xd5dde8, hemiGround: 0x6d7077, hemiInt: 1.25, exposure: 1.05, env: 1.15, fog: 0xaeb6bf, fogK: 0.5 },
+  evening: { sky: 'sky_evening.jpg', dir: [-0.85, 0.26, 0.45], sun: 0xffa45c, sunInt: 3.1, hemiSky: 0x9fb4e0, hemiGround: 0x5a4a44, hemiInt: 0.38, exposure: 0.95, env: 0.8, fog: 0xd8a98a, fogK: 0.8 },
+};
 
 const TILE = 8; // Meter pro Texturkachel
 
@@ -101,15 +112,33 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   scene.background = sky;
   scene.environmentIntensity = 1.0;
   scene.fog = new THREE.Fog(0xb9c4ca, 350, 2000);
-  new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/sky.jpg`, (t) => {
-    t.mapping = THREE.EquirectangularReflectionMapping;
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 4;
+  const skyCache = new Map<string, THREE.Texture>();
+  const loadSky = (file: string, done: (t: THREE.Texture) => void) => {
+    const hit = skyCache.get(file);
+    if (hit) {
+      done(hit);
+      return;
+    }
+    new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/${file}`, (t) => {
+      t.mapping = THREE.EquirectangularReflectionMapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      skyCache.set(file, t);
+      done(t);
+    });
+  };
+  let envRTcur: THREE.WebGLRenderTarget = envRT;
+  const applySky = (t: THREE.Texture) => {
     const rt = pmrem.fromEquirectangular(t);
     scene.environment = rt.texture;
     scene.background = t;
-    pmrem.dispose();
+    if (envRTcur !== rt) envRTcur.dispose();
+    envRTcur = rt;
+  };
+  loadSky('sky.jpg', (t) => {
+    if (!weatherSet) applySky(t);
   });
+  let weatherSet = false;
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 6000);
 
@@ -170,6 +199,7 @@ void main(){
   composer.addPass(new OutputPass());
   let post = true;
   const sunDir = new THREE.Vector3(-0.55, 0.78, 0.3).normalize();
+  let curWeather: Weather = 'sunny';
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -213,6 +243,26 @@ void main(){
       sc.top = half;
       sc.bottom = -half;
       sc.updateProjectionMatrix();
+    },
+    setWeather: (w: Weather, fogColor: number, fogNear: number, fogFar: number) => {
+      const p = WEATHER[w];
+      curWeather = w;
+      weatherSet = true;
+      loadSky(p.sky, (t) => {
+        if (curWeather === w) applySky(t);
+      });
+      sunDir.set(...p.dir).normalize();
+      sun.color.setHex(p.sun);
+      sun.intensity = p.sunInt;
+      hemi.color.setHex(p.hemiSky);
+      hemi.groundColor.setHex(p.hemiGround);
+      hemi.intensity = p.hemiInt;
+      renderer.toneMappingExposure = p.exposure;
+      scene.environmentIntensity = p.env;
+      const fog = scene.fog as THREE.Fog;
+      fog.color.setHex(p.fog ?? fogColor);
+      fog.near = fogNear * (p.fogK < 1 ? 0.5 : 1);
+      fog.far = fogFar * p.fogK;
     },
     updateEnvironment: (cx: number, cz: number) => {
       sun.position.set(cx + sunDir.x * 70, sunDir.y * 70, cz + sunDir.z * 70);

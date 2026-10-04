@@ -5,6 +5,7 @@ import teams from './data/teams.json';
 import { DRIVERS, teamOf } from './race/field';
 import { AI_LEVELS, driverPace } from './race/field';
 import { RacingLine } from './race/line';
+import { RacingLineVis } from './render/racingLineVis';
 import { selectField, type RaceConfig } from './race/race';
 import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
@@ -52,7 +53,23 @@ if (gameMap.track) {
 const effects = new Effects(scene, worldMap);
 const pitCrew = new PitCrewRenderer(scene);
 let debris: DebrisRenderer | null = null;
+/** Wetter/Tageszeit nach Einstellung anwenden. */
+function applyWeather(): void {
+  const fogColor = gameMap.track ? new THREE.Color(gameMap.theme.fog).getHex() : 0xb9c4ca;
+  bundle.setWeather(settings.weather, fogColor, gameMap.track ? 650 : 350, gameMap.track ? 7200 : 2000);
+}
+applyWeather();
 const lapTimer = new LapTimer(gameMap.track);
+let lineVis: RacingLineVis | null = null;
+/** Ideallinien-Band nach Einstellung ein-/ausblenden (wird erst beim ersten Einschalten berechnet). */
+function syncRacingLine(): void {
+  if (!gameMap.track) return;
+  if (settings.racingLine && !lineVis) {
+    lineCache ??= new RacingLine(gameMap.track);
+    lineVis = new RacingLineVis(scene, gameMap.track, lineCache);
+  }
+  lineVis?.setVisible(settings.racingLine && settings.camera !== 'showroom');
+}
 
 const career = loadCareer();
 const physics = new PhysicsClient(settings.map, undefined, career.up);
@@ -236,6 +253,8 @@ function qualiGrid(cfg: RaceConfig, playerBest: number): { order: number[]; rows
   };
 }
 function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {}): void {
+  syncRacingLine();
+  applyWeather();
   const race = kind !== 'free';
   if (race) settings.team = teamOf(DRIVERS[settings.driver] ?? DRIVERS[0]).id;
   applyControlClass();
@@ -313,10 +332,13 @@ else start.show();
 
 const menu = setupMenu(settings, controls, {
   onMainMenu: () => raceHud.onMenu?.(),
+  onLineChanged: syncRacingLine,
+  onWeatherChanged: applyWeather,
   onTeamChanged: buildCar,
   onCameraChanged: () => {
     rig.setMode(settings.camera, car);
     document.body.classList.toggle('showroom', settings.camera === 'showroom');
+    syncRacingLine();
   },
   onTelemetryChanged: () => hud.setTelemetryVisible(settings.telemetry),
   onBrakeBias: (b) => physics.setBrakeBias(b),

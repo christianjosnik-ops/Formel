@@ -1,8 +1,8 @@
 """
 Erzeugt einen Himmel (Equirectangular, JPEG) mit Verlauf, Dunst am Horizont, Sonnenschein und Cumulus-Wolken
 mit Beleuchtung (Sonnenseite hell, Unterseite grau).
-Aufruf: python tools/make_sky.py public/textures/sky.jpg
-Die Sonne steht bei Richtung (-0.55, 0.78, 0.30) (wie im Spiel, src/render/scene.ts).
+Aufruf: python tools/make_sky.py public/textures/sky.jpg [sunny|overcast|evening]
+Die Sonne steht je Stimmung bei Richtung SUN (wie im Spiel, src/render/scene.ts, WEATHER).
 """
 import math
 import os
@@ -12,6 +12,8 @@ import bpy
 import numpy as np
 
 out = sys.argv[1] if len(sys.argv) > 1 else 'sky.jpg'
+mode = sys.argv[2] if len(sys.argv) > 2 else 'sunny'
+SUN = {'sunny': (-0.55, 0.78, 0.30), 'overcast': (-0.55, 0.78, 0.30), 'evening': (-0.85, 0.26, 0.45)}[mode]
 W, H = 2048, 1024
 
 
@@ -47,26 +49,33 @@ theta = V * math.pi
 dx = np.sin(theta) * np.cos(phi)
 dz = np.sin(theta) * np.sin(phi)
 dy = np.cos(theta)
-sun = np.array([-0.55, 0.78, 0.30])
+sun = np.array(SUN)
 sun /= np.linalg.norm(sun)
 cos_s = dx * sun[0] + dy * sun[1] + dz * sun[2]
 
 el = np.clip(dy, 0, 1)
-zen = np.array([0.04, 0.16, 0.50])
-mid = np.array([0.16, 0.40, 0.80])
-hor = np.array([0.66, 0.78, 0.90])
+if mode == 'overcast':
+    zen, mid, hor = np.array([0.46, 0.50, 0.56]), np.array([0.58, 0.62, 0.67]), np.array([0.72, 0.75, 0.78])
+elif mode == 'evening':
+    zen, mid, hor = np.array([0.10, 0.17, 0.38]), np.array([0.42, 0.40, 0.55]), np.array([0.98, 0.62, 0.38])
+else:
+    zen, mid, hor = np.array([0.04, 0.16, 0.50]), np.array([0.16, 0.40, 0.80]), np.array([0.66, 0.78, 0.90])
 t1 = np.clip(el / 0.35, 0, 1)[..., None]
 t2 = np.clip((el - 0.15) / 0.85, 0, 1)[..., None]
 sky = hor * (1 - t1) + mid * t1
 sky = sky * (1 - t2 * 0.8) + zen * (t2 * 0.8)
 # Dunst am Horizont und Mie-Streuung um die Sonne
 haze = np.exp(-el * 9.0)[..., None]
-sky = sky * (1 - haze * 0.45) + np.array([0.86, 0.89, 0.92]) * haze * 0.45
-glow = (np.clip(cos_s, 0, 1) ** 24)[..., None] * np.array([1.0, 0.86, 0.62]) * 0.55
+hc = np.array([0.98, 0.64, 0.40]) if mode == 'evening' else np.array([0.86, 0.89, 0.92])
+sky = sky * (1 - haze * 0.45) + hc * haze * 0.45
+gk = {'sunny': 0.55, 'overcast': 0.05, 'evening': 1.1}[mode]
+glow = (np.clip(cos_s, 0, 1) ** 24)[..., None] * np.array([1.0, 0.78 if mode == 'evening' else 0.86, 0.45 if mode == 'evening' else 0.62]) * gk
 glow2 = (np.clip(cos_s, 0, 1) ** 4)[..., None] * np.array([1.0, 0.92, 0.8]) * 0.12
+if mode == 'evening':
+    glow2 = glow2 + (np.clip(cos_s, 0, 1) ** 7)[..., None] * np.array([1.0, 0.5, 0.2]) * 0.55
 sky = sky + glow + glow2
-disk = np.clip((cos_s - 0.99965) / 0.00035, 0, 1)[..., None]
-sky = sky * (1 - disk) + np.array([6.0, 5.5, 4.8]) * disk
+disk = np.clip((cos_s - 0.99965) / 0.00035, 0, 1)[..., None] * (0.0 if mode == 'overcast' else 1.0)
+sky = sky * (1 - disk) + (np.array([6.0, 3.4, 1.4]) if mode == 'evening' else np.array([6.0, 5.5, 4.8])) * disk
 
 # Wolken: Projektion auf eine Ebene, FBM mit Schwellwert, Beleuchtung durch Verschiebung zur Sonne
 N = 1024
@@ -75,16 +84,23 @@ den = (dy + 0.12)
 pu = dx / den * 0.22
 pv = dz / den * 0.22
 dens = sample(base, pu + 0.31, pv + 0.17)
-cover = 0.43
+cover = {'sunny': 0.43, 'overcast': 0.16, 'evening': 0.40}[mode]
 cl = np.clip((dens - cover) / 0.16, 0, 1)
 cl = cl * cl * (3 - 2 * cl)
 # Beleuchtung: Dichte an um die Sonnenrichtung verschobener Stelle (dünn = Sonne scheint durch)
 sx, sz = sun[0] / (sun[1] + 0.12) * 0.22, sun[2] / (sun[1] + 0.12) * 0.22
 sh = sample(base, pu + 0.31 + sx * 0.02, pv + 0.17 + sz * 0.02)
 lit = np.clip(0.5 + (dens - sh) * 7.0, 0, 1)
-cloud_col = (np.array([0.58, 0.62, 0.70]) * (1 - lit[..., None]) + np.array([1.0, 0.98, 0.95]) * lit[..., None])
+if mode == 'overcast':
+    cloud_col = (np.array([0.62, 0.65, 0.70]) * (1 - 0.35 * lit[..., None]) + np.array([0.82, 0.84, 0.88]) * 0.35 * lit[..., None]) * (0.78 + 0.5 * (dens[..., None] - 0.4))
+elif mode == 'evening':
+    cloud_col = np.array([0.36, 0.30, 0.42]) * (1 - lit[..., None]) + np.array([1.0, 0.62, 0.38]) * lit[..., None]
+else:
+    cloud_col = (np.array([0.58, 0.62, 0.70]) * (1 - lit[..., None]) + np.array([1.0, 0.98, 0.95]) * lit[..., None])
 cloud_col = cloud_col * (0.80 + 0.2 * np.clip(el * 3, 0, 1))[..., None]
 fade = np.clip(el * 5.0 - 0.15, 0, 1)  # zum Horizont hin ausblenden
+if mode == 'overcast':
+    fade = np.clip(el * 8.0 + 0.25, 0, 1)
 a = (cl * fade)[..., None]
 sky = sky * (1 - a) + cloud_col * a
 

@@ -55,6 +55,8 @@ const SETUP: Group[] = [
 const DRIVE: Group[] = [
   { title: 'Fahrhilfen', ico: '🛟', items: [{ id: 'assist', label: 'Stabilität', opts: [['2', 'Stark', 'Einsteiger'], ['1', 'Mittel'], ['0', 'Aus', 'Profi']], get: (s) => String(s.tc), set: (s, v) => { const n = Number(v); s.tc = n; s.abs = n === 0 ? 0 : 1; s.steerAssist = n; } }] },
   { title: 'Steuerung', ico: '🎮', items: [{ id: 'control', label: 'Eingabe', opts: [['arrows', 'Pfeile', 'rechts lenken · links Pedale'], ['touch', 'Lenkband', 'mit Pedalen'], ['tilt', 'Neigung']], get: (s) => s.control, set: (s, v) => (s.control = v as Settings['control']) }] },
+  { title: 'Ideallinie', ico: '🧭', items: [{ id: 'line', label: 'Fahrlinie', hint: 'Bremspunkte anzeigen', opts: [['0', 'Aus'], ['1', 'Ein', 'grün Gas · rot Bremsen']], get: (s) => (s.racingLine ? '1' : '0'), set: (s, v) => (s.racingLine = v === '1') }] },
+  { title: 'Wetter & Licht', ico: '⛅', items: [{ id: 'weather', label: 'Stimmung', opts: [['sunny', 'Sonnig', 'klarer Himmel'], ['overcast', 'Bewölkt', 'weiches Licht'], ['evening', 'Abendlicht', 'tiefe Sonne']], get: (s) => s.weather, set: (s, v) => (s.weather = v as Settings['weather']) }] },
   { title: 'Grafik', ico: '🖥', items: [{ id: 'quality', label: 'Qualität', opts: [['auto', 'Auto', '60 FPS halten'], ['high', 'Hoch'], ['low', 'Niedrig']], get: (s) => s.quality, set: (s, v) => (s.quality = v as Settings['quality']) }] },
 ];
 
