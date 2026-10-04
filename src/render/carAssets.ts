@@ -39,3 +39,22 @@ export function loadCarAssets(): Promise<CarAssets> {
   });
   return cached;
 }
+
+let cachedLod: Promise<CarAssets> | null = null;
+
+/** Vereinfachtes F1-Modell für KI-Autos (tools/make_car_lod.py, ~20 000 statt ~160 000 Dreiecke); ohne Datei das Vollmodell. */
+export function loadCarLodAssets(): Promise<CarAssets> {
+  if (cachedLod) return cachedLod;
+  const base = import.meta.env.BASE_URL;
+  const draco = new DRACOLoader();
+  draco.setDecoderPath(`${base}draco/`);
+  const loader = new GLTFLoader();
+  loader.setDRACOLoader(draco);
+  cachedLod = Promise.all([loader.loadAsync(`${base}models/f1car_lod.glb`), loadCarAssets()])
+    .then(([gltf, full]) => {
+      draco.dispose();
+      return { scene: gltf.scene, info: full.info };
+    })
+    .catch(() => loadCarAssets());
+  return cachedLod;
+}

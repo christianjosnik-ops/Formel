@@ -521,9 +521,36 @@ function addGrandstand(scene: THREE.Scene, t: Track, s0: number, s1: number, sid
   scene.add(posts);
 }
 
-function addMarshalPosts(scene: THREE.Scene, t: Track): void {
+function addMarshalPosts(scene: THREE.Scene, t: Track, assets: SceneryAssets | null = null): void {
   const spacing = 210;
   const n = Math.floor(t.length / spacing);
+  const parts = assets?.parts('marshal_post') ?? [];
+  if (parts.length) {
+    // Blender-Kabine: Fensterfront zeigt zur Strecke
+    const mats: THREE.Matrix4[] = [];
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const one = new THREE.Vector3(1, 1, 1);
+    for (let k = 0; k < n; k++) {
+      const i = Math.round((k * spacing) / t.ds) % t.n;
+      const side = k % 2 === 0 ? 1 : -1;
+      const o = (side === 1 ? t.wl[i] + t.barrierL[i] : t.wr[i] + t.barrierR[i]) + 5.2;
+      const x = t.x[i] + t.nx(i) * side * o;
+      const y = t.y[i] + t.ny(i) * side * o;
+      e.set(0, Math.atan2(-side * t.ny(i), -side * t.nx(i)), 0);
+      q.setFromEuler(e);
+      mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, t.elev[i] - 0.03, -y), q, one));
+    }
+    for (const part of parts) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, mats.length);
+      mats.forEach((m, k) => im.setMatrixAt(k, m));
+      im.castShadow = !COARSE;
+      im.receiveShadow = true;
+      im.computeBoundingSphere();
+      scene.add(im);
+    }
+    return;
+  }
   const post = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 2.6, 0.18), new THREE.MeshStandardMaterial({ color: 0xd9d9dc, roughness: 0.6 }), n);
   const box = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 1.3, 1.1), new THREE.MeshStandardMaterial({ color: 0xff7a00, roughness: 0.6 }), n);
   const light = new THREE.InstancedMesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd23a }), n);
@@ -967,10 +994,60 @@ function addPitWall(scene: THREE.Scene, t: Track, scenery: SceneryAssets | null 
   }
 }
 
-function addGantry(scene: THREE.Scene, t: Track): void {
+function addGantry(scene: THREE.Scene, t: Track, assets: SceneryAssets | null = null): void {
   const i = 0;
   const hw = Math.max(t.wl[i], t.wr[i]) + 1.8;
   const grp = new THREE.Group();
+  if (assets && assets.parts('gantry_pylon').length) {
+    // Blender-Bauteile: zwei Gitterstützen, Fachwerkträger aus 1-m-Segmenten, fünf Ampel-Einheiten und Anzeigetafel
+    const add = (name: string, x: number, y: number, z: number, rotY = 0): void => {
+      for (const part of assets!.parts(name)) {
+        const m = new THREE.Mesh(part.geo, part.mat);
+        m.position.set(x, y, z);
+        m.rotation.y = rotY;
+        m.castShadow = !COARSE;
+        grp.add(m);
+      }
+    };
+    add('gantry_pylon', 0, 0, -hw);
+    add('gantry_pylon', 0, 0, hw);
+    const segs = Math.ceil(hw * 2);
+    const truss = assets!.parts('gantry_truss');
+    for (const part of truss) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, segs);
+      const m4 = new THREE.Matrix4();
+      for (let k = 0; k < segs; k++) {
+        // Segment k deckt z = -hw + k .. +1 ab; Blender-Y des Segments läuft in Three-z (−y), daher gespiegelt
+        m4.makeTranslation(0, 8.5, -hw + k + 1);
+        im.setMatrixAt(k, m4);
+      }
+      im.castShadow = !COARSE;
+      im.computeBoundingSphere();
+      grp.add(im);
+    }
+    for (let k = 0; k < 5; k++) add('gantry_lights', -1.0, 8.5, -hw * 0.5 + k * hw * 0.25, Math.PI); // Ampeln zeigen zum Feld hinter der Linie
+    const board2 = new THREE.Mesh(
+      new THREE.PlaneGeometry(hw * 1.4, 1.2),
+      new THREE.MeshBasicMaterial({
+        map: canvasTex(1024, 96, (g) => {
+          g.fillStyle = '#0d0f13';
+          g.fillRect(0, 0, 1024, 96);
+          g.fillStyle = '#ffffff';
+          g.font = '800 64px "Helvetica Neue", Arial, sans-serif';
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText('FORMEL 2026', 512, 52);
+        }, false),
+      }),
+    );
+    board2.position.set(1.05, 8.5, 0);
+    board2.rotation.y = Math.PI / 2;
+    grp.add(board2);
+    grp.position.set(t.x[i], t.elev[i], -t.y[i]);
+    grp.rotation.y = t.hdg[i];
+    scene.add(grp);
+    return;
+  }
   const steel = new THREE.MeshStandardMaterial({ color: 0x5c6167, roughness: 0.5, metalness: 0.6 });
   for (const side of [-1, 1]) {
     const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 8.5, 0.7), steel);
@@ -1101,7 +1178,7 @@ const COARSE = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: 
  * Große Instanzen-Meshes (über die ganze Strecke verteilt) in räumliche Zellen teilen: Frustum-Culling arbeitet je Mesh,
  * ein einziges Mesh mit tausenden Instanzen würde sonst immer komplett gezeichnet (auf dem iPad der größte Posten).
  */
-function chunkLargeInstances(scene: THREE.Scene, skip: Set<THREE.Object3D>, cell = 220, minCount = 260): void {
+function chunkLargeInstances(scene: THREE.Scene, skip: Set<THREE.Object3D>, dist: Map<THREE.Object3D, number>, cell = 220, minCount = 260): void {
   const m = new THREE.Matrix4();
   const c = new THREE.Color();
   for (const obj of [...scene.children]) {
@@ -1129,7 +1206,10 @@ function chunkLargeInstances(scene: THREE.Scene, skip: Set<THREE.Object3D>, cell
       n.renderOrder = im.renderOrder;
       n.computeBoundingSphere();
       scene.add(n);
+      const far = dist.get(im);
+      if (far !== undefined) dist.set(n, far);
     }
+    dist.delete(im);
     scene.remove(im);
     im.dispose();
   }
@@ -1147,6 +1227,10 @@ interface WetMat {
 }
 
 export interface TrackVisuals {
+  /** Sichtweiten der Instanzen-Chunks anwenden (Kameraposition in Szenenkoordinaten). */
+  updateVisibility: (x: number, z: number) => void;
+  /** Alle Chunks sichtbar schalten (Aufwärmen). */
+  showAll: () => void;
   /** Streckennässe 0..1: Asphalt und Boden werden dunkler und spiegelnder. */
   setWet: (w: number) => void;
   /** Gelände- und Baumhöhe an (x, y) in Physikkoordinaten. */
@@ -1340,8 +1424,8 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   const gravelMat = wetReg(layerMat(gravelTex, 2, { roughness: 1, normalMap: surfaceNormal('gravel'), normalScale: new THREE.Vector2(1.2, 1.2) }), 0.75, 0.62, 1.2);
   add(ribbon(t, 0.008, (i) => t.wl[i] + t.kerbL[i], (i) => t.wl[i] + t.kerbL[i] + t.gravelL[i], (i) => t.gravelL[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
   add(ribbon(t, 0.008, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 6, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), gravelMat);
-  // Geharkter Kies: Furchen in Fahrtrichtung als Overlay
-  {
+  // Geharkter Kies: Furchen in Fahrtrichtung als Overlay (nicht auf Touch-Geräten)
+  if (!coarse) {
     const rk = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/gravelrake.png`);
     rk.wrapS = rk.wrapT = THREE.RepeatWrapping;
     rk.colorSpace = THREE.SRGBColorSpace;
@@ -1371,14 +1455,17 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
       tx.anisotropy = 8;
       return tx;
     };
-    const patchMat = layerMat(loadPng('patches'), 4, { transparent: true, depthWrite: false, roughness: 0.9 });
-    patchMat.map!.wrapS = THREE.ClampToEdgeWrapping;
-    add(ribbon(t, 0.0135, (i) => -t.wr[i], (i) => t.wl[i], () => true, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 26]), patchMat, false);
-    // Gummikrümel (Marbles) neben der Ideallinie
-    const marbleMat = layerMat(loadPng('marbles'), 4, { transparent: true, depthWrite: false, roughness: 1 });
-    marbleMat.map!.wrapS = THREE.ClampToEdgeWrapping;
-    add(ribbon(t, 0.0145, (i) => smoothed[i % t.n] + 2.0, (i) => t.wl[i] - 0.2, (i) => t.wl[i] - 0.2 - smoothed[i % t.n] > 2.6, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 12]), marbleMat, false);
-    add(ribbon(t, 0.0145, (i) => -t.wr[i] + 0.2, (i) => smoothed[i % t.n] - 2.0, (i) => smoothed[i % t.n] - 2.0 + t.wr[i] - 0.2 > 0.6, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 12]), marbleMat, false);
+    // Ausbesserungen und Marbles sind vollflächige, durchscheinende PBR-Schichten: auf Touch-Geräten weggelassen (Füllrate)
+    if (!coarse) {
+      const patchMat = layerMat(loadPng('patches'), 4, { transparent: true, depthWrite: false, roughness: 0.9 });
+      patchMat.map!.wrapS = THREE.ClampToEdgeWrapping;
+      add(ribbon(t, 0.0135, (i) => -t.wr[i], (i) => t.wl[i], () => true, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 26]), patchMat, false);
+      // Gummikrümel (Marbles) neben der Ideallinie
+      const marbleMat = layerMat(loadPng('marbles'), 4, { transparent: true, depthWrite: false, roughness: 1 });
+      marbleMat.map!.wrapS = THREE.ClampToEdgeWrapping;
+      add(ribbon(t, 0.0145, (i) => smoothed[i % t.n] + 2.0, (i) => t.wl[i] - 0.2, (i) => t.wl[i] - 0.2 - smoothed[i % t.n] > 2.6, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 12]), marbleMat, false);
+      add(ribbon(t, 0.0145, (i) => -t.wr[i] + 0.2, (i) => smoothed[i % t.n] - 2.0, (i) => smoothed[i % t.n] - 2.0 + t.wr[i] - 0.2 > 0.6, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 12]), marbleMat, false);
+    }
     const rub = layerMat(rubberTexture(), 4, { transparent: true, depthWrite: false, roughness: 0.75 });
     add(ribbon(t, 0.014, (i) => smoothed[i % t.n] - 1.9, (i) => smoothed[i % t.n] + 1.9, () => true, (i, _lat, e) => [e, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 6]), rub);
   }
@@ -1427,7 +1514,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
   addAdBoards(scene, t);
 
   // ---- Bauwerke an der Start/Ziel-Geraden ----
-  addGantry(scene, t);
+  addGantry(scene, t, scenery);
   addGrandstand(scene, t, -330, -60, -1, scenery);
   addGrandstand(scene, t, 40, 260, -1, scenery);
   const pitS0 = t.pitZone.box0 - 12;
@@ -1457,11 +1544,13 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
       stands.push({ s0: sc - 70, s1: sc + 70, side });
       if (used.length >= 5) break;
     }
-    addMarshalPosts(scene, t);
+    addMarshalPosts(scene, t, scenery);
   }
 
   // ---- Wald ----
   const treeMeshes: Array<{ im: THREE.InstancedMesh; total: number }> = [];
+  /** Instanzen-Chunks mit Sichtweite [m]: weiter entfernte werden gar nicht erst gezeichnet (Draw-Calls im flachen Gelände). */
+  const distMeshes = new Map<THREE.Object3D, number>();
   {
     const rnd = mulberry(seed * 7919);
     // Bäume aus Blattkarten (Alpha-Test) mit prozeduraler Laub-/Nadeltextur: dichte, detaillierte Kronen bei wenig Dreiecken
@@ -1738,6 +1827,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           im.computeBoundingSphere();
           scene.add(im);
           treeMeshes.push({ im, total: n });
+          distMeshes.set(im, coarse ? 450 : 800);
         }, !coarse);
       }
       // Mittel- und Ferndistanz: Blender-LOD-Bäume (je ~250 Flächen), in Chunks für Frustum-Culling
@@ -1759,6 +1849,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
               im.computeBoundingSphere();
               scene.add(im);
               treeMeshes.push({ im, total: n });
+              distMeshes.set(im, coarse ? 2400 : 4500);
             }, false);
           }
         }
@@ -1860,6 +1951,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
             im.receiveShadow = shadow;
             im.computeBoundingSphere();
             scene.add(im);
+            distMeshes.set(im, coarse ? 1000 : 1800);
           }
         };
         // Hecken entlang der Parzellengrenzen (die Hälfte der Grenzen, nur auf Feldflur)
@@ -2010,6 +2102,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           place(nm, arr, 1.0, (im) => {
             im.computeBoundingSphere();
             scene.add(im);
+            distMeshes.set(im, coarse ? 240 : 420);
           });
         }
       }
@@ -2068,9 +2161,24 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     scene.add(m);
   }
 
-  chunkLargeInstances(scene, new Set(treeMeshes.map((t) => t.im)));
+  chunkLargeInstances(scene, new Set(treeMeshes.map((t) => t.im)), distMeshes);
 
+  const cen = new THREE.Vector3();
   return {
+    showAll: () => {
+      for (const o of distMeshes.keys()) o.visible = true;
+    },
+    updateVisibility: (x: number, z: number) => {
+      for (const [o, far] of distMeshes) {
+        const im = o as THREE.InstancedMesh;
+        const bs = im.boundingSphere;
+        if (!bs) continue;
+        const dx = bs.center.x - x;
+        const dz = bs.center.z - z;
+        cen.set(dx, 0, dz);
+        o.visible = cen.length() - bs.radius < far;
+      }
+    },
     setWet: (w: number) => {
       const k = Math.max(0, Math.min(1, w));
       for (const e of wetMats) {

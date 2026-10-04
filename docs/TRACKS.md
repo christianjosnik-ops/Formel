@@ -68,3 +68,10 @@ Die Layouts bleiben Monza, Spa und Silverstone; Optik und Ausstattung orientiere
 - **Touch-Pfad** (`(pointer: coarse)`): weniger Geometrie (110 statt 320 Detail-Bäume, 3200 statt 5600 LOD-Bäume, halbe Grasdichte und nur 24 m Streifen), keine Schattenwerfer außer Auto, Boxenanlage und Pitwall (Baumschatten ersetzen weiche Kontaktschatten), Schattenkarte 1536², Startauflösung 1,25× (adaptiv nach unten bis 0,85×, kein Hochskalieren mehr), HUD nur mit 30 Hz, Telemetrie-Panel einmalig aus.
 - **Chunking** (`chunkLargeInstances`): große Instanzen-Meshes (Reifenstapel, Hecken, Pfosten …) werden in 220-m-Zellen geteilt, damit Frustum-Culling greift. Messung Monza (iPad-Emulation, 1180×820 @2×): 3,06 Mio. → 0,53 Mio. Dreiecke je Bild, 554 → 233 Draw-Calls.
 - **Ladebildschirm** mit Startampel (fünf Lichter = Fortschritt, Tipps): danach wird einmal die gesamte Szene ohne Culling gezeichnet (Shader kompilieren, Geometrien/Texturen hochladen, auch Boxencrew, Regen, Safety Car, Ideallinie), damit es im Spiel keine Ruckler beim ersten Sichtbarwerden gibt.
+
+### Performance, Runde 2 (Rennen mit vielen Autos)
+
+- **KI-Autos in drei Stufen**: nah (<16 m auf Touch, <40 m sonst; in der Box immer) das vereinfachte Modell `f1car_lod.glb` (`tools/make_car_lod.py`: ~14 000 statt ~80 000 Polygone, Teile gleichen Materials zu einem Mesh verschmolzen), weiter weg ein ~500-Dreiecke-Proxy (`render/carLod.ts`, ein Draw-Call). Nur das Auto des Spielers nutzt das volle Modell.
+- **Sichtweiten je Chunk** (`TrackVisuals.updateVisibility`): Gras/Büsche nur bis ~240 m (Touch) bzw. 420 m, Detail-Bäume bis 450/800 m, LOD-Bäume bis 2400/4500 m, Hecken/Gehöfte bis 1000/1800 m – im flachen Monza zeichnete der Frustum-Test sonst Hunderte weit entfernter Chunks.
+- **Touch**: keine Ausbesserungs-/Marbles-Schichten (vollflächige durchscheinende PBR-Layer) und kein geharkter Kies; Startauflösung 1,1×, bei Bedarf stufenweise Auflösung → Schatten aus → weniger Details.
+- **Qualifying**: Aufwärmrunde + eine schnelle Runde.

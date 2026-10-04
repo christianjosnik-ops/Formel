@@ -1562,6 +1562,126 @@ def pit_sign(name):
     return b.finish()
 
 
+
+# ----------------------------------------------------------------------------------------------
+# Streckenposten (Marshal-Kabine) und Startgerüst-Bauteile
+# ----------------------------------------------------------------------------------------------
+M_LAMP = mat_color('GantryLight', (1, 1, 1), rough=0.4, vc=True)
+
+
+def marshal_post(name):
+    """Streckenposten: Kabine mit Fensterfront (zeigt nach +x), Vordach, Fahnenmast mit Warnleuchte, Feuerlöschern, Funkmast."""
+    b = Builder(name)
+    for m in (M_CONC, M_VC, M_STEEL, M_DARK, M_LAMP):
+        b.mat_index(m)
+    ORANGE, WHITE, DARKG = (0.95, 0.34, 0.03), (0.93, 0.93, 0.95), (0.05, 0.06, 0.07)
+    box2(b, -1.2, -1.15, 0.0, 1.35, 1.15, 0.16, M_CONC, (0.8, 0.8, 0.8))          # Sockel
+    box2(b, -1.05, -0.95, 0.16, 0.95, 0.95, 2.1, M_VC, ORANGE)                       # Kabinenkörper
+    box2(b, -1.05, -0.95, 0.16, 0.95, 0.95, 0.42, M_VC, (0.1, 0.1, 0.11))            # dunkler Sockelstreifen
+    # Fensterfront (Glas dunkel, weißer Rahmen)
+    box2(b, 0.94, -0.78, 1.05, 0.985, 0.78, 1.82, M_VC, WHITE)
+    box2(b, 0.96, -0.72, 1.1, 1.0, 0.72, 1.77, M_DARK, DARKG)
+    for sy in (-0.24, 0.24):
+        box2(b, 0.96, sy - 0.02, 1.1, 1.01, sy + 0.02, 1.77, M_VC, WHITE)
+    # Seitenfenster und Tür (Rückseite)
+    for sy in (-1, 1):
+        box2(b, -0.35, sy * 0.94, 1.15, 0.55, sy * 0.985, 1.75, M_VC, WHITE)
+        box2(b, -0.31, sy * 0.95, 1.2, 0.51, sy * 0.99, 1.7, M_DARK, DARKG)
+    box2(b, -1.09, -0.4, 0.16, -1.04, 0.4, 1.85, M_VC, (0.85, 0.3, 0.03))            # Tür hinten
+    box2(b, -1.11, 0.28, 0.95, -1.08, 0.34, 1.05, M_STEEL, (0.7, 0.72, 0.75))        # Türgriff
+    # Dach mit Überstand und Vorderdach
+    box2(b, -1.25, -1.2, 2.1, 1.0, 1.2, 2.22, M_VC, WHITE)
+    box2(b, 0.95, -1.2, 2.0, 1.55, 1.2, 2.1, M_VC, WHITE)
+    for sy in (-1.15, 1.15):
+        beam(b, (1.5, sy, 0.16), (1.5, sy, 2.0), 0.07, 0.07, M_STEEL, (0.55, 0.57, 0.6))   # Stützen des Vordachs
+    # Warnband (gelb/schwarz) am Sockel
+    for k in range(10):
+        c = (0.95, 0.8, 0.05) if k % 2 == 0 else (0.05, 0.05, 0.05)
+        box2(b, 1.355, -1.15 + k * 0.23, 0.0, 1.38, -1.15 + (k + 1) * 0.23, 0.16, M_VC, c)
+    # Fahnenmast und Warnleuchte
+    cyl(b, -1.0, 1.0, 0.16, 3.4, 0.035, M_STEEL, (0.6, 0.62, 0.66), 8)
+    cyl(b, -1.0, 1.0, 3.4, 3.62, 0.09, M_VC, (0.2, 0.2, 0.22), 12)
+    cyl(b, -1.0, 1.0, 3.62, 3.74, 0.075, M_LAMP, (1.0, 0.62, 0.05), 12)
+    # Flagge (aufgerollt als Hülle)
+    cyl(b, -1.0, 1.0, 2.55, 3.05, 0.05, M_VC, (0.9, 0.85, 0.2), 8)
+    # Funkmast
+    cyl(b, 0.6, -1.0, 2.2, 4.0, 0.012, M_STEEL, (0.7, 0.72, 0.75), 6)
+    # Feuerlöscher auf Halterung, Reifenstapel als Prellbock
+    for sy in (-0.45, 0.45):
+        cyl(b, 1.1, sy, 0.16, 0.74, 0.085, M_VC, (0.78, 0.06, 0.05), 12)
+        cyl(b, 1.1, sy, 0.74, 0.8, 0.045, M_VC, (0.1, 0.1, 0.1), 8)
+    return b.finish()
+
+
+def gantry_pylon(name):
+    """Gitterstütze des Startgerüsts: vier Gurte, Querstreben und Diagonalen, Fußplatte mit Schrauben, Kabelkanal."""
+    b = Builder(name)
+    for m in (M_STEEL, M_VC, M_CONC):
+        b.mat_index(m)
+    STEEL = (0.5, 0.52, 0.56)
+    H, w = 8.6, 0.45
+    box2(b, -0.9, -0.9, 0.0, 0.9, 0.9, 0.3, M_CONC, (0.78, 0.78, 0.78))
+    box2(b, -0.62, -0.62, 0.3, 0.62, 0.62, 0.38, M_STEEL, STEEL)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            beam(b, (sx * w, sy * w, 0.38), (sx * w * 0.8, sy * w * 0.8, H), 0.11, 0.11, M_STEEL, STEEL)
+            for bx, by in ((-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)):
+                pass
+            cyl(b, sx * 0.52, sy * 0.52, 0.38, 0.5, 0.035, M_STEEL, (0.3, 0.3, 0.32), 6)
+    nseg = 8
+    for k in range(nseg):
+        z0 = 0.5 + k * (H - 0.5) / nseg
+        z1 = z0 + (H - 0.5) / nseg
+        wk0 = w * (1 - 0.2 * (z0 / H))
+        wk1 = w * (1 - 0.2 * (z1 / H))
+        # Querrahmen
+        for (p, q) in (((-1, -1), (1, -1)), ((1, -1), (1, 1)), ((1, 1), (-1, 1)), ((-1, 1), (-1, -1))):
+            beam(b, (p[0] * wk0, p[1] * wk0, z0), (q[0] * wk0, q[1] * wk0, z0), 0.06, 0.06, M_STEEL, STEEL)
+        # Diagonalen auf allen vier Seiten
+        for (p, q) in (((-1, -1), (1, -1)), ((1, -1), (1, 1)), ((1, 1), (-1, 1)), ((-1, 1), (-1, -1))):
+            beam(b, (p[0] * wk0, p[1] * wk0, z0), (q[0] * wk1, q[1] * wk1, z1), 0.045, 0.045, M_STEEL, STEEL)
+    # Kopfplatte, Kabelkanal an der Streckenseite, Leiter
+    box2(b, -0.55, -0.55, H, 0.55, 0.55, H + 0.12, M_STEEL, STEEL)
+    box2(b, 0.5, -0.12, 0.5, 0.62, 0.12, H - 0.2, M_VC, (0.12, 0.12, 0.13))
+    for k in range(30):
+        z = 0.7 + k * 0.26
+        beam(b, (-0.46, -0.3, z), (-0.46, 0.3, z), 0.04, 0.04, M_STEEL, (0.4, 0.4, 0.42))
+    return b.finish()
+
+
+def gantry_truss(name):
+    """Ein Meter Fachwerkträger (Länge entlang y, Querschnitt 2,4 x 1,8): vier Gurte mit Streben, wird zur Gerüstbreite gereiht."""
+    b = Builder(name)
+    for m in (M_STEEL, M_VC):
+        b.mat_index(m)
+    STEEL = (0.5, 0.52, 0.56)
+    X, Z = 1.0, 0.8
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            beam(b, (sx * X, 0.0, sz * Z), (sx * X, 1.0, sz * Z), 0.12, 0.12, M_STEEL, STEEL, side=(0, 0, 1))
+    # Rahmen am Segmentanfang und Diagonalen auf den vier Flächen
+    for (p, q) in (((-1, -1), (1, -1)), ((1, -1), (1, 1)), ((1, 1), (-1, 1)), ((-1, 1), (-1, -1))):
+        beam(b, (p[0] * X, 0.0, p[1] * Z), (q[0] * X, 0.0, q[1] * Z), 0.07, 0.07, M_STEEL, STEEL, side=(0, 1, 0))
+        beam(b, (p[0] * X, 0.0, p[1] * Z), (q[0] * X, 1.0, q[1] * Z), 0.05, 0.05, M_STEEL, STEEL, side=(0, 0, 1))
+    return b.finish()
+
+
+def gantry_lights(name):
+    """Startampel-Einheit (hängt an der Vorderseite des Trägers, zeigt nach +x): Gehäuse mit vier roten Leuchten."""
+    b = Builder(name)
+    for m in (M_VC, M_LAMP, M_STEEL):
+        b.mat_index(m)
+    box2(b, 0.0, -0.32, -0.7, 0.18, 0.32, 0.7, M_VC, (0.05, 0.05, 0.06))
+    box2(b, 0.18, -0.34, -0.72, 0.21, 0.34, -0.66, M_VC, (0.1, 0.1, 0.11))
+    box2(b, 0.18, -0.34, 0.66, 0.21, 0.34, 0.72, M_VC, (0.1, 0.1, 0.11))
+    for k in range(4):
+        z = -0.48 + k * 0.32
+        cyl(b, 0.0, z, 0.18, 0.22, 0.125, M_VC, (0.02, 0.02, 0.02), 16, axis='x')       # Blende
+        cyl(b, 0.0, z, 0.2, 0.235, 0.095, M_LAMP, (1.0, 0.06, 0.04), 16, axis='x')       # Linse (unbeleuchtet in Rot)
+    # Befestigungsarm
+    beam(b, (-0.05, 0.0, 0.7), (-0.35, 0.0, 0.9), 0.1, 0.1, M_STEEL, (0.45, 0.47, 0.5))
+    return b.finish()
+
 # ----------------------------------------------------------------------------------------------
 # Szene bauen und exportieren
 # ----------------------------------------------------------------------------------------------
@@ -1588,6 +1708,10 @@ objs.append(pit_garage('pit_garage'))
 objs.append(pit_stand('pit_stand'))
 objs.append(pit_exit_light('pit_exit_light'))
 objs.append(pit_sign('pit_sign'))
+objs.append(marshal_post('marshal_post'))
+objs.append(gantry_pylon('gantry_pylon'))
+objs.append(gantry_truss('gantry_truss'))
+objs.append(gantry_lights('gantry_lights'))
 objs.append(flower_patch('flowers_white', 31, (0.96, 0.96, 0.92), (0.95, 0.75, 0.1)))
 objs.append(flower_patch('flowers_yellow', 32, (0.98, 0.82, 0.12), (0.7, 0.45, 0.05)))
 objs.append(flower_patch('flowers_purple', 33, (0.62, 0.4, 0.8), (0.95, 0.9, 0.5)))

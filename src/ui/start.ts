@@ -8,8 +8,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const MODES: Array<{ id: Settings['mode']; name: string; ico: string; text: string }> = [
   { id: 'race', name: 'Rennen', ico: '🏁', text: 'Startaufstellung, Ampelstart und Rennen gegen das Feld. Live-Rangliste mit Zeitabständen.' },
-  { id: 'weekend', name: 'Rennwochenende', ico: '🏆', text: 'Qualifying mit Zeitenjagd, danach das Rennen – dein Startplatz hängt von deiner schnellsten Runde ab.' },
-  { id: 'season', name: 'Saison', ico: '📅', text: 'Drei Rennwochenenden (Monza, Spa, Silverstone) mit Qualifying und Meisterschaftspunkten für alle Fahrer – am Ende steht der Weltmeister fest. Der Stand wird gespeichert.' },
+  { id: 'weekend', name: 'Rennwochenende', ico: '🏆', text: 'Qualifying mit Aufwärmrunde und einer schnellen Runde, danach das Rennen – dein Startplatz hängt von dieser Runde ab.' },
+  { id: 'season', name: 'Saison', ico: '📅', text: 'Drei Rennwochenenden (Monza, Spa, Silverstone) mit Qualifying (eine schnelle Runde) und Meisterschaftspunkten für alle Fahrer – am Ende steht der Weltmeister fest. Der Stand wird gespeichert.' },
   { id: 'free', name: 'Freies Fahren', ico: '⏱', text: 'Allein auf der Strecke: Rundenzeiten jagen, Fahrwerk und Crash-Verhalten testen.' },
 ];
 

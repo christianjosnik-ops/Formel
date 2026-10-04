@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { carLodMesh, mergeByMaterial } from './carLod';
 import { DENT_STRIDE, MAX_DENTS, S } from '../physics/layout';
 import type { CarConfig } from '../config/car';
 import type { CarAssets } from './carAssets';
@@ -284,6 +285,8 @@ const WHEEL_KEYS = ['FL', 'FR', 'RL', 'RR'] as const;
 
 export class CarModel {
   readonly root = new THREE.Group();
+  /** Vereinfachtes Auto für große Entfernung (ein Draw-Call). */
+  private readonly lod: THREE.Mesh;
   private readonly pivot = new THREE.Group();
   private readonly shell = new THREE.Group();
   private readonly wheelRoots: THREE.Group[] = [];
@@ -312,8 +315,13 @@ export class CarModel {
     private readonly cfg: CarConfig,
     livery: Livery,
     assets: CarAssets,
+    /** KI-Auto: Teile mit gleichem Material zu einem Mesh verschmelzen (weniger Draw-Calls). */
+    lite = false,
   ) {
     this.livery = livery;
+    this.lod = carLodMesh(livery.primary);
+    this.lod.visible = false;
+    this.root.add(this.lod);
     this.root.add(this.pivot);
     this.pivot.position.y = cfg.geometry.cgHeight;
     this.pivot.add(this.shell);
@@ -415,16 +423,19 @@ export class CarModel {
     // ---- Karosserie ----
     const body = nodes['body'];
     applyMaterials(body);
+    if (lite) mergeByMaterial(body);
     this.shell.add(body);
     // Flügel: Drehpunkte für Verformung
     const wf = nodes['wing_front'];
     applyMaterials(wf);
+    if (lite) mergeByMaterial(wf);
     this.wingFront.position.set(2.4, 0.22, 0);
     wf.position.set(-2.4, -0.22, 0);
     this.wingFront.add(wf);
     this.shell.add(this.wingFront);
     const wr = nodes['wing_rear'];
     applyMaterials(wr);
+    if (lite) mergeByMaterial(wr);
     this.wingRear.position.set(-1.75, 0.6, 0);
     wr.position.set(1.75, -0.6, 0);
     this.wingRear.add(wr);
@@ -469,6 +480,10 @@ export class CarModel {
         applyMaterials(m);
         (matName === 'Meshesmesh101Mtl' ? still : spin).add(m);
       }
+      if (lite) {
+        mergeByMaterial(spin);
+        mergeByMaterial(still);
+      }
       // Bremsscheibe: glühende Scheibe hinter der Abdeckung
       const dmat = new THREE.MeshStandardMaterial({ color: 0x3a3a3c, roughness: 0.5, metalness: 0.8, emissive: 0x000000 });
       this.discMats.push(dmat);
@@ -507,7 +522,17 @@ export class CarModel {
   }
 
   /** Aktualisiert Transformationen und Schadensdarstellung aus einem (interpolierten) Snapshot. */
+  /** Entfernte Autos: nur das vereinfachte Modell zeigen und nur die Lage nachführen. */
+  updateLod(snap: Float64Array, ground = 0, tilt = 0): void {
+    this.pivot.visible = false;
+    this.lod.visible = true;
+    this.root.position.set(snap[S.x], ground, -snap[S.y]);
+    this.root.rotation.set(0, snap[S.psi], tilt);
+  }
+
   update(snap: Float64Array, dt: number, ground = 0, tilt = 0): void {
+    this.pivot.visible = true;
+    this.lod.visible = false;
     const cfg = this.cfg;
     this.root.position.set(snap[S.x], ground + this.serviceLift, -snap[S.y]);
     this.root.rotation.set(0, snap[S.psi], tilt);
@@ -588,7 +613,7 @@ export class CarModel {
   dispose(): void {
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) {
+      if (m.isMesh && m !== this.lod) {
         const mats = Array.isArray(m.material) ? m.material : [m.material];
         for (const mt of mats) mt.dispose();
       }

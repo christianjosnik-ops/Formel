@@ -22,7 +22,7 @@ import { PhysicsClient } from './physics/client';
 import { CONTACT_STRIDE, MAX_CONTACTS, S } from './physics/layout';
 import { newInput } from './physics/vehicle';
 import { CarModel, type Livery } from './render/carModel';
-import { loadCarAssets } from './render/carAssets';
+import { loadCarAssets, loadCarLodAssets } from './render/carAssets';
 import { CameraRig } from './render/cameraRig';
 import { createScene } from './render/scene';
 import { DebrisRenderer, Effects } from './render/effects';
@@ -120,6 +120,7 @@ const hud = new Hud();
 try {
   if (window.matchMedia?.('(pointer: coarse)').matches && !localStorage.getItem('formel.tel.v1')) {
     settings.telemetry = false;
+    if (settings.field > 12) settings.field = 12; // kleineres Feld entlastet die Physik auf dem iPad (im Menü änderbar)
     localStorage.setItem('formel.tel.v1', '1');
   }
 } catch {
@@ -130,6 +131,7 @@ hud.setTelemetryVisible(settings.telemetry);
 // ---------------------------------------------------------------- Fahrzeug / Livree
 await loadStep(0.65, 'Autos werden geladen');
 const assets = await loadCarAssets();
+const assetsLod = await loadCarLodAssets();
 let car!: CarModel;
 function buildCar(): void {
   if (car) {
@@ -178,7 +180,8 @@ function makeAi(v: Float64Array): CarModel {
   const m = new CarModel(
     TEST_CAR_2026,
     { primary: t.colors.primary, secondary: t.colors.secondary, accent: t.colors.accent, number: d.number, helmet: d.helmet, teamName: t.name, engineName: t.engine, compound: 'medium' },
-    assets,
+    assetsLod,
+    true,
   );
   m.root.traverse((o) => (o.castShadow = false));
   scene.add(m.root);
@@ -200,7 +203,8 @@ function updateAi(dt: number, s: Float64Array): void {
     }
     const dx = v[S.x] - s[S.x];
     const dy = v[S.y] - s[S.y];
-    const near = dx * dx + dy * dy < 450 * 450;
+    const d2 = dx * dx + dy * dy;
+    const near = d2 < 450 * 450;
     m.root.visible = near;
     if (near) {
       let g = 0;
@@ -210,7 +214,14 @@ function updateAi(dt: number, s: Float64Array): void {
         gameMap.track.slopeAt(v[S.x], v[S.y], slopeTmp);
         tl = Math.atan(slopeTmp[0] * Math.cos(v[S.psi]) + slopeTmp[1] * Math.sin(v[S.psi]));
       }
-      m.update(v, dt, g, tl);
+      // Abstand zur Kamera: nah volles Modell (auch in der Box wegen der Crew-Animation), fern vereinfachtes Modell
+      const cx = v[S.x] - camera.position.x;
+      const cz = -v[S.y] - camera.position.z;
+      const cd2 = cx * cx + cz * cz;
+      const fd = coarse ? 16 : 40;
+      const full = cd2 < fd * fd || (v[S.pitState] >= 2 && cd2 < 160 * 160);
+      if (full) m.update(v, dt, g, tl);
+      else m.updateLod(v, g, tl);
     }
   }
 }
@@ -308,7 +319,7 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   applyControlClass();
   buildCar();
   clearAi();
-  physics.restart(kind === 'quali' ? raceConfig({ laps: 4, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up, settings.rain);
+  physics.restart(kind === 'quali' ? raceConfig({ laps: 2, field: 1, grid: 'pole', ...over }) : race ? raceConfig(over) : undefined, career.up, settings.rain);
   physics.setBrakeBias(settings.brakeBias);
   raceHud.pitAuto = settings.pitAuto;
   raceHud.setActive(race, kind === 'quali' ? 'quali' : 'race');
@@ -464,7 +475,7 @@ aeroBtn.addEventListener('pointerdown', (e) => {
 const maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
 // Handys starten konservativ (1,5x) und steigern sich, wenn die Bildrate stabil ist
-let pixelRatio = coarse ? Math.min(maxPixelRatio, 1.25) : maxPixelRatio;
+let pixelRatio = coarse ? Math.min(maxPixelRatio, 1.1) : maxPixelRatio;
 let qualityLocked = settings.quality !== 'auto';
 function applyQuality(): void {
   visuals.setDetail?.(settings.quality === 'low' ? 0.4 : coarse && settings.quality !== 'high' ? 0.65 : 1);
@@ -482,14 +493,16 @@ applyQuality();
 
 // ---------------------------------------------------------------- Aufwärmen
 let warming = false;
+let detailStep = 0;
 let hudAcc = 0;
+let visFrame = 0;
 /**
  * Vor dem Start einmal alles zeichnen: Shader kompilieren und alle Geometrien/Texturen auf die GPU laden (auch die außerhalb des
  * Bildes und die nur gelegentlich sichtbaren: Boxencrew, Regen, Safety Car, Ideallinie), damit es später keine Ruckler gibt.
  */
 async function warmUp(): Promise<void> {
   await loadStep(0.8, 'Boxencrew und Effekte werden vorbereitet');
-  await pitCrew.loaded;
+  await Promise.all([pitCrew.loaded, scModel.loaded]);
   await loadStep(0.88, 'Shader werden kompiliert');
   const culled = new Map<THREE.Object3D, boolean>();
   scene.traverse((o) => {
@@ -504,6 +517,7 @@ async function warmUp(): Promise<void> {
     scModel.root.visible = true;
     if (lineVis) lineVis.mesh.visible = true;
     pitCrew.warm(true);
+    visuals.showAll?.();
     renderer.compile(scene, camera);
     bundle.render();
   } catch {
@@ -648,6 +662,7 @@ function frame(now: number): void {
       const wet = s[S.wet];
       const rain = s[S.rain];
       visuals.setWet?.(wet);
+      if ((visFrame++ & 3) === 0) visuals.updateVisibility?.(camera.position.x, camera.position.z);
       const rainy = lookWeather === 'overcast' && settings.weather !== 'overcast';
       if (rain > 0.22 && !rainy) applyWeather('overcast');
       else if (rain < 0.08 && wet < 0.3 && lookWeather !== settings.weather) applyWeather();
@@ -658,7 +673,7 @@ function frame(now: number): void {
       const sc = (s[S.scState] > 0 || !!fs) && rig.mode !== 'showroom';
       const scx = fs ? fs.x : s[S.scX];
       const scy = fs ? fs.y : s[S.scY];
-      scModel.update(sc, scx, sc && gameMap.track ? gameMap.track.heightAt(scx, scy) : 0, -scy, fs ? fs.psi : s[S.scPsi], performance.now() * 0.001);
+      scModel.update(sc, scx, sc && gameMap.track ? gameMap.track.heightAt(scx, scy) : 0, -scy, fs ? fs.psi : s[S.scPsi], performance.now() * 0.001, s[S.scState] > 0 ? 36 : 0);
     }
     bundle.setCinema(rig.mode === 'showroom' ? 0 : s[S.speedKmh] / 3.6, performance.now() * 0.001);
     // HUD (viele DOM-Schreibzugriffe) nur mit 30 Hz aktualisieren
@@ -714,10 +729,14 @@ function frame(now: number): void {
         pixelRatio = Math.max(coarse ? 0.85 : 1, pixelRatio - 0.2);
         bundle.setPixelRatio(pixelRatio);
         lowCount = 0;
-      } else if (lowCount >= 4 && renderer.shadowMap.enabled) {
+      } else if (lowCount >= 2 && renderer.shadowMap.enabled) {
         renderer.shadowMap.enabled = false;
         bundle.sun.castShadow = false;
         visuals.setDetail?.(0.55);
+        lowCount = 0;
+      } else if (lowCount >= 3 && detailStep < 1) {
+        detailStep = 1;
+        visuals.setDetail?.(0.3);
         lowCount = 0;
       } else if (!coarse && highCount >= 8 && pixelRatio < maxPixelRatio) {
         pixelRatio = Math.min(maxPixelRatio, pixelRatio + 0.25);
@@ -735,7 +754,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Debug-/Testzugriff
-(window as unknown as Record<string, unknown>).__formel = { renderer, scene, setDebugSc: (v: { x: number; y: number; psi: number } | null) => { debugSc = v; }, pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
+(window as unknown as Record<string, unknown>).__formel = { aiModels, renderer, scene, setDebugSc: (v: { x: number; y: number; psi: number } | null) => { debugSc = v; }, pitCrew, setDebugCam: (c: typeof debugCam) => { debugCam = c; }, prof, physics, controls, settings, rig, map: gameMap, get car() { return car; }, raceHud, launch };
 
 // PWA: Service Worker (Netzwerk zuerst, Cache als Offline-Rückfall)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.match(/^(localhost|127\.)/)) {

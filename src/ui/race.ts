@@ -109,7 +109,7 @@ export class RaceHud {
     const total = me[S.raceLaps];
     const lap = Math.min(total, Math.max(1, me[S.raceLap]));
     const q = this.kind === 'quali';
-    $('raceLap').textContent = q ? `QUALIFYING · RUNDE ${lap}/${total}` : `RUNDE ${lap}/${total}`;
+    $('raceLap').textContent = q ? (total > 1 && lap < total ? 'QUALIFYING · AUFWÄRMRUNDE' : 'QUALIFYING · SCHNELLE RUNDE') : `RUNDE ${lap}/${total}`;
     if (!q && total > 1 && lap === total && this.lastLap < total && state === 1) this.say('LETZTE RUNDE', 1.8);
     this.lastLap = lap;
     $('racePos').textContent = q ? (me[S.raceBest] > 0 ? `Beste ${fmtTime(me[S.raceBest])}` : 'Beste –') : `P${me[S.racePos]}/${n}`;

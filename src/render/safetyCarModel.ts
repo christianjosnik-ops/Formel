@@ -1,62 +1,71 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-/** Safety Car: einfaches Sportcoupé (britisch-grün, silberne Streifen) mit blinkendem Lichtbalken. */
+/**
+ * Safety Car: Blender-Modell (tools/make_safetycar.py, public/models/safetycar.glb) mit blinkendem Dachlichtbalken,
+ * drehenden Rädern und Lichtern. Bis das Modell geladen ist (oder falls es fehlt), erscheint nichts.
+ */
 export class SafetyCarModel {
   readonly root = new THREE.Group();
-  private readonly bar: THREE.MeshStandardMaterial;
+  private readonly wheels: THREE.Object3D[] = [];
+  private amber: THREE.MeshStandardMaterial[] = [];
+  private green: THREE.MeshStandardMaterial[] = [];
+  private tail: THREE.MeshStandardMaterial[] = [];
+  private head: THREE.MeshStandardMaterial[] = [];
+  private spin = 0;
+  private lastT = 0;
+  /** Modell geladen. */
+  readonly loaded: Promise<void>;
+  ready = false;
 
   constructor() {
-    const paint = new THREE.MeshPhysicalMaterial({ color: 0x0c5a3a, roughness: 0.3, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x0f1113, roughness: 0.5, metalness: 0.3 });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x0a1218, roughness: 0.08, metalness: 0.6 });
-    const silver = new THREE.MeshStandardMaterial({ color: 0xc9ccd2, roughness: 0.3, metalness: 0.8 });
-    this.bar = new THREE.MeshStandardMaterial({ color: 0x221400, emissive: 0xffa000, emissiveIntensity: 1, roughness: 0.4 });
-    const add = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, rz = 0): THREE.Mesh => {
-      const mesh = new THREE.Mesh(g, m);
-      mesh.position.set(x, y, z);
-      mesh.rotation.set(rx, 0, rz);
-      mesh.castShadow = true;
-      this.root.add(mesh);
-      return mesh;
-    };
-    // Karosserie: Unterbau, Motorhaube (nach vorn abfallend), Kabine, Heck
-    add(new THREE.BoxGeometry(4.5, 0.55, 1.95), paint, 0, 0.62, 0);
-    add(new THREE.BoxGeometry(1.5, 0.22, 1.9), paint, 1.55, 0.95, 0, 0, -0.1);
-    add(new THREE.BoxGeometry(1.8, 0.5, 1.7), glass, -0.2, 1.05, 0);
-    add(new THREE.BoxGeometry(1.6, 0.06, 1.62), paint, -0.25, 1.33, 0);
-    add(new THREE.BoxGeometry(0.9, 0.2, 1.85), paint, -1.95, 0.98, 0, 0, 0.1);
-    add(new THREE.BoxGeometry(0.12, 0.05, 1.85), dark, -2.35, 1.1, 0);
-    // Frontsplitter, Streifen, Lufteinlass
-    add(new THREE.BoxGeometry(0.5, 0.06, 2.0), dark, 2.3, 0.37, 0);
-    add(new THREE.BoxGeometry(4.3, 0.04, 0.12), silver, 0, 0.9, 0.5);
-    add(new THREE.BoxGeometry(4.3, 0.04, 0.12), silver, 0, 0.9, -0.5);
-    add(new THREE.BoxGeometry(0.12, 0.3, 1.2), dark, 2.26, 0.62, 0);
-    // Räder
-    for (const [x, z] of [[1.45, 0.88], [1.45, -0.88], [-1.4, 0.9], [-1.4, -0.9]] as const) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.3, 20), dark);
-      w.rotation.x = Math.PI / 2;
-      w.position.set(x, 0.36, z);
-      w.castShadow = true;
-      this.root.add(w);
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.32, 14), silver);
-      c.rotation.x = Math.PI / 2;
-      c.position.set(x, 0.36, z);
-      this.root.add(c);
-    }
-    // Lichtbalken auf dem Dach
-    add(new THREE.BoxGeometry(0.32, 0.1, 1.5), this.bar, -0.3, 1.43, 0);
-    // Rücklichter
-    const tail = new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff1010, emissiveIntensity: 1.4 });
-    add(new THREE.BoxGeometry(0.06, 0.08, 0.6), tail, -2.32, 0.78, 0.6);
-    add(new THREE.BoxGeometry(0.06, 0.08, 0.6), tail, -2.32, 0.78, -0.6);
     this.root.visible = false;
+    this.loaded = new GLTFLoader()
+      .loadAsync(`${import.meta.env.BASE_URL}models/safetycar.glb`)
+      .then((gltf) => {
+        const m = gltf.scene;
+        m.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (/^Wheel(FL|FR|RL|RR)$/.test(o.name)) this.wheels.push(o);
+          if (!mesh.isMesh) return;
+          mesh.castShadow = true;
+          mesh.receiveShadow = false;
+          mesh.frustumCulled = true;
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const mt of mats) {
+            const sm = mt as THREE.MeshStandardMaterial;
+            if (sm.name === 'SCAmber' && !this.amber.includes(sm)) this.amber.push(sm);
+            else if (sm.name === 'SCGreen' && !this.green.includes(sm)) this.green.push(sm);
+            else if (sm.name === 'SCTail' && !this.tail.includes(sm)) this.tail.push(sm);
+            else if (sm.name === 'SCHead' && !this.head.includes(sm)) this.head.push(sm);
+            if (sm.name === 'SCGlass') {
+              sm.roughness = 0.05;
+              sm.metalness = 0.6;
+              sm.envMapIntensity = 1.6;
+            }
+          }
+        });
+        this.root.add(m);
+        this.ready = true;
+      })
+      .catch(() => undefined);
   }
 
-  update(active: boolean, x: number, ground: number, z: number, psi: number, time: number): void {
-    this.root.visible = active;
-    if (!active) return;
+  /** x, z in Szenenkoordinaten, psi = Kursrichtung (wie das Auto), speed in m/s für die Raddrehung. */
+  update(active: boolean, x: number, ground: number, z: number, psi: number, time: number, speed = 0): void {
+    this.root.visible = active && this.ready;
+    if (!this.root.visible) return;
     this.root.position.set(x, ground, z);
     this.root.rotation.y = psi;
-    this.bar.emissiveIntensity = Math.sin(time * 14) > 0 ? 2.6 : 0.2;
+    const dt = Math.min(0.1, Math.max(0, time - this.lastT));
+    this.lastT = time;
+    this.spin -= (speed / 0.36) * dt;
+    for (const w of this.wheels) w.rotation.z = this.spin;
+    // Lichtbalken: Bernstein im Wechsel mit kurzer Pause, Grün aus
+    const on = Math.sin(time * 13) > -0.2;
+    for (const m of this.amber) m.emissiveIntensity = on ? 3.2 : 0.05;
+    for (const m of this.green) m.emissiveIntensity = 0;
+    for (const m of this.tail) m.emissiveIntensity = 1.4;
+    for (const m of this.head) m.emissiveIntensity = 1.6;
   }
 }
