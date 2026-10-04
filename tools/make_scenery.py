@@ -278,7 +278,15 @@ def crowd_texture():
                 ax = x + side * sx * 0.54
                 rect(ax - 4, ax + 4, base + 8, base + torso_h * 0.6, tuple(np.clip(np.array(sh) * 0.9, 0, 1)))
         x += sx * (0.82 + r.random() * 0.35)
-    arr[..., :3] *= 0.92
+    # Plastizität: Oberkörper/Köpfe oben im Licht, unten in der Sitzreihe verschattet, dazu Stoffkorn und weiche Kanten
+    yy = np.linspace(0, 1, h)[:, None]
+    shade = 0.58 + 0.5 * np.clip(yy * 1.25, 0, 1) ** 0.9
+    grain = 0.92 + 0.16 * value_noise(w, h, 3, 77)
+    arr[..., :3] = np.clip(arr[..., :3] * (shade * grain)[..., None] * 0.95, 0, 1)
+    # dunkle Kontur um jede Figur (trennt nebeneinander sitzende Personen)
+    a = arr[..., 3]
+    edge = (a > 0.5) & ((np.roll(a, 1, 0) < 0.5) | (np.roll(a, -1, 0) < 0.5) | (np.roll(a, 1, 1) < 0.5) | (np.roll(a, -1, 1) < 0.5))
+    arr[edge, :3] *= 0.55
     return arr
 
 

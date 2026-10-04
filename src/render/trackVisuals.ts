@@ -1289,7 +1289,7 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
     add(ribbon(t, 0.0095, (i) => -(t.wr[i] + t.kerbR[i] + t.gravelR[i]), (i) => -(t.wr[i] + t.kerbR[i]), (i) => t.gravelR[i] > 1.5, (i, lat) => [lat / 3.5, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 3.5]), rakeMat, false);
   }
   // Asphalt
-  const asphaltMat = layerMat(asphalt, 3, { roughness: 0.88, color: 0xe4e6ee, normalMap: surfaceNormal('asphalt'), normalScale: new THREE.Vector2(0.7, 0.7) });
+  const asphaltMat = layerMat(asphalt, 3, { roughness: 0.72, color: 0xe4e6ee, normalMap: surfaceNormal('asphalt'), normalScale: new THREE.Vector2(0.7, 0.7) });
   add(ribbon(t, 0.012, (i) => -t.wr[i], (i) => t.wl[i] + t.pitW[i], () => true, (i, lat) => [lat / 8, (t.s[i % t.n] + (i >= t.n ? t.length : 0)) / 8]), asphaltMat);
   // Reifenspur (Ideallinie: zur Kurveninnenseite verschoben)
   {
@@ -1611,6 +1611,20 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
         const h = (rnd() - 0.5) * 0.34;
         return col.setRGB((0.6 + 0.4 * (th.foliage[0] / fm)) * k * boost * (1 + h * 1.1), (0.6 + 0.4 * (th.foliage[1] / fm)) * k * boost * (1 - Math.abs(h) * 0.25), (0.6 + 0.4 * (th.foliage[2] / fm)) * k * boost * (1 - h * 0.9));
       };
+      const blobTex = (() => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 64;
+        const g = c.getContext('2d')!;
+        const gr = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+        gr.addColorStop(0, 'rgba(0,0,0,0.62)');
+        gr.addColorStop(0.55, 'rgba(0,0,0,0.30)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr;
+        g.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(c);
+      })();
+      const blobGeo = new THREE.PlaneGeometry(1, 1);
+      const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, fog: true });
       const isFoliage = (m: THREE.Material) => /Leaf|Needle|Bush/i.test(m.name);
       const place = (name: string, items: Array<{ x: number; y: number; h: number; tint: number }>, boost: number, add: (im: THREE.InstancedMesh, n: number) => void, shadow = false) => {
         if (!items.length) return;
@@ -1631,6 +1645,23 @@ export function buildTrackVisuals(scene: THREE.Scene, map: GameMap, scenery: Sce
           im.castShadow = shadow;
           im.receiveShadow = shadow;
           add(im, items.length);
+        }
+        // weicher Kontaktschatten unter dem Baum (die Schattenkarte deckt nur die Nähe des Autos ab)
+        if (name.startsWith('tree_')) {
+          const blob = new THREE.InstancedMesh(blobGeo, blobMat, items.length);
+          items.forEach((it, k) => {
+            const r = it.h * 0.42;
+            e.set(-Math.PI / 2, 0, 0);
+            q.setFromEuler(e);
+            pos.set(it.x + it.h * 0.22, heightAt(it.x, it.y) + 0.06, -it.y - it.h * 0.1);
+            scl.set(r * 2, r * 2, 1);
+            m4.compose(pos, q, scl);
+            blob.setMatrixAt(k, m4);
+          });
+          blob.computeBoundingSphere();
+          blob.frustumCulled = true;
+          blob.renderOrder = 1;
+          scene.add(blob);
         }
       };
       // Bäume
