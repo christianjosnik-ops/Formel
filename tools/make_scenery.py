@@ -218,6 +218,22 @@ def foliage_needle():
     return arr
 
 
+def fence_texture():
+    """Maschendraht (Rautenmuster) mit Alpha: Drahtdicke so, dass auch Mipmaps noch Deckung behalten."""
+    n = 256
+    arr = np.zeros((n, n, 4), np.float32)
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+    cell = 64.0
+    d1 = np.abs(((xs + ys) % cell) - cell / 2)
+    d2 = np.abs(((xs - ys) % cell) - cell / 2)
+    wire = np.minimum(d1, d2)
+    m = wire > (cell / 2 - 5.0)
+    arr[..., :3] = np.array([0.62, 0.65, 0.68], np.float32)
+    arr[..., :3] *= (0.85 + 0.25 * np.clip((xs % cell) / cell, 0, 1))[..., None]
+    arr[..., 3] = m.astype(np.float32)
+    return arr
+
+
 def crowd_texture():
     w, h = 1024, 256
     arr = np.zeros((h, w, 4), np.float32)
@@ -414,6 +430,7 @@ img_seat = make_image('seat', seat_texture())
 img_roof = make_image('roof', roof_texture())
 img_clad = make_image('cladding', cladding_texture())
 img_ad = make_image('ad', ad_texture())
+img_fence = make_image('fence', fence_texture())
 
 
 # ----------------------------------------------------------------------------------------------
@@ -479,6 +496,7 @@ M_SEAT = mat_image('Seat', img_seat, rough=0.55, vc=True)
 M_ROOF = mat_image('Roof', img_roof, rough=0.5)
 M_WALL = mat_image('Cladding', img_clad, rough=0.5)
 M_AD = mat_image('Ad', img_ad, rough=0.6)
+M_FENCE = mat_image('CatchFence', img_fence, alpha=True, rough=0.5)
 M_DARK = mat_color('Dark', (0.08, 0.09, 0.1), rough=0.8)
 
 
@@ -929,7 +947,7 @@ def crowd_row(b, xa, xb, y, z, seed):
 
 def grandstand_module(name, L=12.0):
     b = Builder(name)
-    for m in (M_CONC, M_SEAT, M_CROWD, M_AD, M_STEEL, M_ROOF, M_WALL):
+    for m in (M_CONC, M_SEAT, M_CROWD, M_AD, M_STEEL, M_ROOF, M_WALL, M_FENCE, M_VC):
         b.mat_index(m)
     run, rise = 0.80, 0.38
     aisle_x, aisle_w = L / 2, 1.3
@@ -967,6 +985,18 @@ def grandstand_module(name, L=12.0):
         beam(b, (x, -0.25, 1.15), (x, -0.25, 2.0), 0.05, 0.05, M_STEEL)
     beam(b, (L / 2, -0.25, 2.0), (L / 2, -0.25, 2.0 + 0.001), L, 0.06, M_STEEL)
     beam(b, (L / 2, -0.25, 1.6), (L / 2, -0.25, 1.6 + 0.001), L, 0.04, M_STEEL)
+
+    # Fangzaun vor der Tribüne: hohe Pfosten mit zur Tribüne geneigtem Ausleger, Maschendraht, Querholme
+    fz1 = 6.3
+    for k in range(int(L / 2) + 1):
+        x = k * 2.0
+        beam(b, (x, -0.25, 1.15), (x, -0.25, fz1), 0.09, 0.09, M_STEEL)
+        beam(b, (x, -0.25, fz1), (x, 0.95, fz1 + 0.6), 0.06, 0.06, M_STEEL)
+        beam(b, (x, -0.25, fz1 - 1.5), (x, 0.55, fz1 + 0.0), 0.04, 0.04, M_STEEL)
+    for zr in (1.6, 3.7, fz1):
+        beam(b, (L / 2, -0.25, zr), (L / 2, -0.25, zr + 0.001), L, 0.05, M_STEEL)
+    quad_uv(b, [(0, -0.27, 1.2), (L, -0.27, 1.2), (L, -0.27, fz1), (0, -0.27, fz1)], M_FENCE, (1, 1, 1), [(0, 0), (L * 0.8, 0), (L * 0.8, 5.1 * 0.8), (0, 5.1 * 0.8)])
+    quad_uv(b, [(0, -0.24, fz1), (L, -0.24, fz1), (L, 0.95, fz1 + 0.6), (0, 0.95, fz1 + 0.6)], M_FENCE, (1, 1, 1), [(0, 0), (L * 0.8, 0), (L * 0.8, 1.2), (0, 1.2)])
 
     z0 = 0.9
     z_low_top, y_low_end = tier('low', 0.0, z0, 14)
@@ -1013,6 +1043,20 @@ def grandstand_module(name, L=12.0):
     for k in range(3):
         x = (k + 0.5) * L / 3
         box2(b, x - 0.3, y_front + 1.4, zr_front - 0.95, x + 0.3, y_front + 1.9, zr_front - 0.6, M_STEEL)
+    # Flaggen am Dachrand (Trikoloren), Fahnenstange mit leicht gewelltem Tuch
+    flags = [((0.0, 0.5, 0.2), (0.95, 0.95, 0.95), (0.8, 0.1, 0.1)), ((0.1, 0.1, 0.1), (0.85, 0.1, 0.1), (0.95, 0.75, 0.1)), ((0.15, 0.2, 0.6), (0.95, 0.95, 0.95), (0.8, 0.1, 0.1)), ((0.95, 0.95, 0.95), (0.1, 0.25, 0.65), (0.95, 0.95, 0.95))]
+    fr = random.Random(int(L * 100))
+    for xf in (L * 0.18, L * 0.52, L * 0.86):
+        fc = flags[fr.randrange(len(flags))]
+        zb = zr_front + 0.5
+        yb = y_front + 0.6
+        beam(b, (xf, yb, zb), (xf, yb, zb + 3.6), 0.05, 0.05, M_STEEL)
+        fw, fh = 1.8, 1.15
+        for si in range(3):
+            xa = xf + 0.04 + si * fw / 3
+            xb2 = xa + fw / 3
+            wob = lambda t_: 0.12 * math.sin(t_ * 5 + xf)
+            quad_uv(b, [(xa, yb + wob(xa), zb + 3.6 - fh), (xb2, yb + wob(xb2), zb + 3.6 - fh), (xb2, yb + wob(xb2), zb + 3.6), (xa, yb + wob(xa), zb + 3.6)], M_VC, fc[si], [(0, 0), (1, 0), (1, 1), (0, 1)])
     proj_uv(b, {M_CONC: 3.0, M_ROOF: 4.0, M_WALL: 4.0})
     return b.finish()
 
@@ -1559,7 +1603,7 @@ objs.append(silo('silo'))
 objs.append(pylon('pylon'))
 
 # Material-Einstellungen für glTF: Blattkarten als Alpha-Clip
-for m in (M_LEAF, M_NEEDLE, M_CROWD):
+for m in (M_LEAF, M_NEEDLE, M_CROWD, M_FENCE):
     try:
         m.blend_method = 'CLIP'
         m.alpha_threshold = 0.5
