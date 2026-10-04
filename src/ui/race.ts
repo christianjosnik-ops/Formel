@@ -30,7 +30,9 @@ export class RaceHud {
   private lastLap = 0;
   kind: 'race' | 'quali' = 'race';
   onQuali: (best: number) => void = () => {};
-  onFinish: (pos: number, n: number, dnf: boolean) => string = () => '';
+  onFinish: (pos: number, n: number, dnf: boolean, order: Array<{ driver: number; out: boolean }>) => string = () => '';
+  /** Beschriftung des Weiter-Knopfs nach dem Rennen (Saison: nächster Lauf). */
+  againLabel = 'Neues Rennen';
   private physics: PhysicsClient | null = null;
   prizeText = '';
   /** Boxen-Automatik aktiv (aus den Einstellungen). */
@@ -126,7 +128,8 @@ export class RaceHud {
       this.banner('');
       if (q) this.onQuali(me[S.raceBest]);
       else {
-        this.prizeText = this.onFinish(me[S.racePos] | 0, n, me[S.raceOut] > 0.5 || (me[S.raceFinished] < 0.5 && me[S.retired] > 0.5));
+        const order = this.rows(physics, n).map((r) => ({ driver: r[S.raceDriver] | 0, out: r[S.raceOut] > 0.5 }));
+        this.prizeText = this.onFinish(me[S.racePos] | 0, n, me[S.raceOut] > 0.5 || (me[S.raceFinished] < 0.5 && me[S.retired] > 0.5), order);
         this.results(physics, n);
       }
     }
@@ -252,7 +255,7 @@ export class RaceHud {
     }
     $('resTitle').textContent = 'Ergebnis';
     $('resPrize').textContent = this.prizeText;
-    $('resAgain').textContent = 'Neues Rennen';
+    $('resAgain').textContent = this.againLabel;
     $('resList').innerHTML = `<div class="rrow"><span></span><span></span><span></span><span>Abstand</span><span>Beste</span></div>${html}`;
     $('results').classList.remove('hidden');
   }

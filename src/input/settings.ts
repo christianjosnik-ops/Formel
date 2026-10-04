@@ -13,7 +13,7 @@ export interface Settings {
   tiltRange: number;
   tiltInvert: boolean;
   quality: 'auto' | 'high' | 'low';
-  mode: 'race' | 'weekend' | 'free';
+  mode: 'race' | 'weekend' | 'season' | 'free';
   laps: number;
   /** -1 = keine KI, sonst Index in AI_LEVELS. */
   aiLevel: number;

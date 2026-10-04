@@ -11,6 +11,7 @@ import { fmtTime } from './ui/race';
 import { COMPOUND_ORDER } from './config/tyres';
 import { GameAudio } from './audio/audio';
 import { loadCareer, prize, recordResult, saveCareer } from './career';
+import { CALENDAR, loadSeason, recordRound, seasonDone } from './season';
 import { Controls } from './input/controls';
 import { loadSettings, saveSettings } from './input/settings';
 import { setupTouchPads } from './input/touch';
@@ -91,7 +92,7 @@ function buildCar(): void {
     car.dispose();
   }
   const team = teams.find((t) => t.id === settings.team) ?? teams[0];
-  const driver = settings.mode === 'race' ? DRIVERS[settings.driver] ?? DRIVERS[0] : DRIVERS.find((d) => d.team === team.id) ?? DRIVERS[0];
+  const driver = settings.mode === 'race' || settings.mode === 'season' ? DRIVERS[settings.driver] ?? DRIVERS[0] : DRIVERS.find((d) => d.team === team.id) ?? DRIVERS[0];
   const livery: Livery = {
     primary: team.colors.primary,
     secondary: team.colors.secondary,
@@ -253,6 +254,7 @@ function qualiGrid(cfg: RaceConfig, playerBest: number): { order: number[]; rows
   };
 }
 function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {}): void {
+  raceHud.againLabel = settings.mode === 'season' ? 'Weiter' : 'Neues Rennen';
   syncRacingLine();
   applyWeather();
   const race = kind !== 'free';
@@ -284,14 +286,21 @@ function launch(kind: 'free' | 'race' | 'quali', over: Partial<RaceConfig> = {})
   (document.getElementById('selTeam') as HTMLSelectElement).value = settings.team;
 }
 function startGame(): void {
-  launch(settings.mode === 'weekend' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
+  launch(settings.mode === 'weekend' || settings.mode === 'season' ? 'quali' : settings.mode === 'race' ? 'race' : 'free');
 }
-raceHud.onFinish = (pos, n, dnf) => {
+const season = loadSeason();
+raceHud.onFinish = (pos, n, dnf, order) => {
+  let extra = '';
+  if (settings.mode === 'season' && !seasonDone(season)) {
+    const done = season.round + 1;
+    const pts = recordRound(season, order, settings.driver);
+    extra = `\nSaison: +${pts} Punkte · Lauf ${done}/${CALENDAR.length}${seasonDone(season) ? ' – Saison beendet, Wertung im Reiter Karriere' : ''}`;
+  }
   const win = prize(pos, n, settings.laps, settings.aiLevel, dnf);
   career.money += win;
   recordResult(career, pos, dnf, win);
   saveCareer(career);
-  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €`;
+  return `Preisgeld + ${win.toLocaleString('de-DE')} €  ·  Guthaben ${career.money.toLocaleString('de-DE')} €${extra}`;
 };
 raceHud.onQuali = (best) => {
   const cfg = raceConfig();
@@ -299,7 +308,7 @@ raceHud.onQuali = (best) => {
   const pos = g.rows.findIndex((r) => r.me) + 1;
   raceHud.showTable(`Qualifying – Startplatz ${pos}`, g.rows, 'Weiter zum Rennen', () => launch('race', { gridOrder: g.order }));
 };
-const start = setupStart(settings, career, (mapChanged) => {
+const start = setupStart(settings, career, season, (mapChanged) => {
   if (mapChanged) {
     try {
       sessionStorage.setItem('formel.autostart', '1');
@@ -309,7 +318,7 @@ const start = setupStart(settings, career, (mapChanged) => {
     location.reload();
   } else startGame();
 });
-raceHud.onAgain = startGame;
+raceHud.onAgain = () => (settings.mode === 'season' ? raceHud.onMenu() : startGame());
 raceHud.onMenu = () => {
   raceHud.setActive(false);
   document.body.classList.remove('race');

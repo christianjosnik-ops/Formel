@@ -1,6 +1,7 @@
 import { DRIVERS, TEAMS, teamOf, teamPerformance } from '../race/field';
 import { saveSettings, type Settings } from '../input/settings';
 import { createMap, MAP_LIST, type MapId } from '../world/maps';
+import { CALENDAR, driverTable, newSeason, saveSeason, seasonDone, teamTable, type Season } from '../season';
 import { buy, MAX_LEVEL, UPGRADE_INFO, upgradeCost, type Career } from '../career';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -8,6 +9,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const MODES: Array<{ id: Settings['mode']; name: string; ico: string; text: string }> = [
   { id: 'race', name: 'Rennen', ico: '🏁', text: 'Startaufstellung, Ampelstart und Rennen gegen das Feld. Live-Rangliste mit Zeitabständen.' },
   { id: 'weekend', name: 'Rennwochenende', ico: '🏆', text: 'Qualifying mit Zeitenjagd, danach das Rennen – dein Startplatz hängt von deiner schnellsten Runde ab.' },
+  { id: 'season', name: 'Saison', ico: '📅', text: 'Drei Rennwochenenden (Monza, Spa, Silverstone) mit Qualifying und Meisterschaftspunkten für alle Fahrer – am Ende steht der Weltmeister fest. Der Stand wird gespeichert.' },
   { id: 'free', name: 'Freies Fahren', ico: '⏱', text: 'Allein auf der Strecke: Rundenzeiten jagen, Fahrwerk und Crash-Verhalten testen.' },
 ];
 
@@ -47,7 +49,7 @@ const WEAR: Choice = { id: 'wear', label: 'Reifenverschleiß', opts: [['0', 'Aus
 const LIMITS: Choice = { id: 'limits', label: 'Streckenlimits', opts: [['0', 'Aus'], ['1', 'Ein', 'ungültige Runden']], get: (s) => (s.trackLimits ? '1' : '0'), set: (s, v) => (s.trackLimits = v === '1') };
 
 const SETUP: Group[] = [
-  { title: 'Rennen', ico: '🏁', only: ['race', 'weekend'], items: [LAPS, AI, FIELD, GRID] },
+  { title: 'Rennen', ico: '🏁', only: ['race', 'weekend', 'season'], items: [LAPS, AI, FIELD, GRID] },
   { title: 'Boxenstopp & Reifen', ico: '🛞', items: [PIT, COMPOUND, WEAR] },
   { title: 'Regeln', ico: '⚖️', items: [LIMITS] },
 ];
@@ -118,7 +120,7 @@ function strategyHint(s: Settings): string {
 }
 
 /** Hauptmenü: Spiel (Modus + Rennaufbau), Strecke, Team/Fahrer, Karriere, Fahren. */
-export function setupStart(settings: Settings, career: Career, onGo: (mapChanged: boolean) => void): { show: () => void } {
+export function setupStart(settings: Settings, career: Career, season: Season, onGo: (mapChanged: boolean) => void): { show: () => void } {
   const el = $('start');
   const loadedMap = settings.map;
   const tabs = document.querySelectorAll<HTMLButtonElement>('#mmTabs button');
@@ -211,6 +213,7 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
       else rows.push(['Start', 'nach Qualifying']);
       rows.push(['Boxenstopp', settings.pitAuto ? 'Automatik' : 'Manuell']);
     }
+    if (settings.mode === 'season') rows.splice(1, 0, ['Saison', seasonDone(season) ? 'beendet – neue startet' : `Lauf ${season.round + 1}/${CALENDAR.length}`]);
     rows.push(['Reifen', `${['Soft', 'Medium', 'Hard'][['soft', 'medium', 'hard'].indexOf(settings.compound)] ?? 'Medium'} · Verschleiß ${['aus', 'normal', 'hoch'][settings.wear] ?? 'normal'}`]);
     sideBox.innerHTML = '';
     const head = document.createElement('div');
@@ -225,7 +228,7 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
     hint.textContent = strategyHint(settings);
     const go = document.createElement('button');
     go.className = 'sideGo';
-    go.textContent = settings.mode === 'free' ? 'Freies Fahren starten' : settings.mode === 'weekend' ? 'Qualifying starten' : 'Rennen starten';
+    go.textContent = settings.mode === 'free' ? 'Freies Fahren starten' : settings.mode === 'season' ? (seasonDone(season) ? 'Neue Saison starten' : `Lauf ${season.round + 1} starten`) : settings.mode === 'weekend' ? 'Qualifying starten' : 'Rennen starten';
     go.addEventListener('click', () => $('stGo').click());
     sideBox.append(dl, hint, go);
   };
@@ -247,6 +250,7 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
 
   const optBox = $('optGroups');
   function refresh(): void {
+    if (settings.mode === 'season' && !seasonDone(season)) settings.map = CALENDAR[season.round];
     buildModes();
     buildGroups(groupBox, SETUP);
     buildGroups(optBox, DRIVE);
@@ -271,6 +275,7 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
       meta.className = 'meta';
       c.append(h, p, meta);
       c.addEventListener('click', () => {
+        if (settings.mode === 'season' && !seasonDone(season)) return; // Saison: Strecke ist durch den Kalender vorgegeben
         settings.map = m.id;
         trackBox.querySelectorAll('.card').forEach((x) => x.classList.remove('on'));
         c.classList.add('on');
@@ -331,7 +336,31 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
   // ---- Karriere: Guthaben, Statistik, Werkstatt ----
   const garageBox = $('garageCards');
   const garageHead = $('garageHead');
+  const seasonBox = $('seasonBox');
+  const buildSeason = () => {
+    const done = seasonDone(season);
+    const drivers = driverTable(season);
+    const teams = teamTable(season).slice(0, 5);
+    const myRank = drivers.findIndex((d) => d.driver === settings.driver) + 1;
+    const rounds = CALENDAR.map((m, i) => {
+      const log = season.log[i];
+      const name = MAP_LIST.find((x) => x.id === m)?.name.split(' – ')[0] ?? m;
+      return `<div class="rd${i === season.round ? ' next' : ''}${log ? ' done' : ''}"><b>${i + 1}</b><span>${name}</span><small>${log ? (log.dnf ? 'Ausfall' : `P${log.pos} · +${log.pts}`) : i === season.round ? 'nächster Lauf' : ''}</small></div>`;
+    }).join('');
+    const rows = drivers.slice(0, 10).map((d, i) => `<div class="srow${d.driver === settings.driver ? ' me' : ''}"><span>${i + 1}</span><i style="background:${d.color}"></i><span>${d.name}</span><b>${d.pts}</b></div>`).join('');
+    const trows = teams.map((t, i) => `<div class="srow"><span>${i + 1}</span><i style="background:${t.color}"></i><span>${t.team}</span><b>${t.pts}</b></div>`).join('');
+    const champ = done ? `<div class="champ">🏆 Weltmeister: <b>${drivers[0].name}</b> (${drivers[0].pts} P)${drivers[0].driver === settings.driver ? ' – das bist du!' : ` · du wurdest P${myRank}`}</div>` : '';
+    seasonBox.innerHTML = `<h4><i>📅</i>Saison</h4>${champ}<div class="rounds">${rounds}</div><div class="tables"><div><h5>Fahrer</h5>${rows}</div><div><h5>Teams</h5>${trows}</div></div><button id="seasonReset" class="seasonReset">Neue Saison beginnen</button>`;
+    $('seasonReset').addEventListener('click', () => {
+      if (!confirm('Aktuelle Saison verwerfen und neu beginnen?')) return;
+      Object.assign(season, newSeason());
+      saveSeason(season);
+      buildSeason();
+      refresh();
+    });
+  };
   const buildGarage = () => {
+    buildSeason();
     const st = career.stats;
     const total = UPGRADE_INFO.reduce((a, u) => a + career.up[u.id], 0);
     garageHead.innerHTML = `
@@ -372,6 +401,11 @@ export function setupStart(settings: Settings, career: Career, onGo: (mapChanged
   buildInfo();
   refresh();
   $('stGo').addEventListener('click', () => {
+    if (settings.mode === 'season' && seasonDone(season)) {
+      Object.assign(season, newSeason());
+      saveSeason(season);
+      settings.map = CALENDAR[0];
+    }
     saveSettings(settings);
     el.classList.add('hidden');
     document.body.classList.remove('inmenu');

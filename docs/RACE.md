@@ -46,3 +46,9 @@ Mit Fahrhilfe (Stufe 1/2) entspricht voller Lenkeinschlag der Grip-Grenze des Au
 
 - **Hauptmenü** (`src/ui/start.ts`, Reiter Spiel · Strecke · Team · Karriere · Fahren): Im Reiter *Spiel* wählt man oben den Modus (Rennen / Rennwochenende / Freies Fahren) und darunter in Gruppen per Auswahlfeldern *Rennen* (Distanz, Gegner, Starterfeld, Startplatz), *Boxenstopp & Reifen* (Automatik/Manuell, Startreifen, Verschleiß) und *Regeln* (Streckenlimits). Rechts zeigt die Übersichtskarte Strecke mit Streckenverlauf, Renndistanz in km, Gegner, Start, Boxenstopp und einen Strategie-Hinweis. *Karriere* zeigt Guthaben, Statistik (Rennen, Siege, Podien, Bestplatz, Ausbau) und die Werkstatt-Upgrades. *Fahren* enthält Fahrhilfen, Steuerung und Grafik.
 - **Menü im Spiel** (`#menu`, `src/ui/menu.ts`): Reiter Fahren (Steuerung, Fahrhilfen, Boxenstopp) · Auto (Team, Reifen, Bremsbalance) · Anzeige (Kamera, Grafik, Ton, Telemetrie) · Rennen (Strecke, Zurück zum Hauptmenü).
+
+## Saison, Ideallinie, Wetter
+
+- **Saison** (`src/season.ts`, Modus „Saison“): Drei Läufe (Monza, Spa, Silverstone), jeweils Qualifying + Rennen. Punkte 25-18-15-12-10-8-6-4-2-1, Ausfälle punktlos; Fahrer- und Teamwertung, Siege und Verlauf des Spielers werden im Browser gespeichert und im Reiter *Karriere* angezeigt (Neue Saison jederzeit möglich). Die Strecke ist durch den Kalender vorgegeben; nach dem Rennen führt „Weiter“ ins Hauptmenü zum nächsten Lauf.
+- **Ideallinie** (`src/render/racingLineVis.ts`, Einstellung „Fahrlinie“): Band entlang der KI-Ideallinie, nach dem Geschwindigkeitsprofil eingefärbt (grün Gas, gelb lupfen, orange/rot bremsen, 70 m Vorschau).
+- **Wetter/Licht** (`createScene().setWeather`, Himmel aus `tools/make_sky.py … sunny|overcast|evening`): Sonnig, Bewölkt (weiches Licht, nahe Dunstgrenze), Abendlicht (tiefe warme Sonne, lange Schatten). Die Physik bleibt unverändert (kein Regen).
