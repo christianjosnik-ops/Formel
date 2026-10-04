@@ -558,6 +558,7 @@ function frame(now: number): void {
       }
     }
     bundle.updateEnvironment(s[S.x], -s[S.y]);
+    bundle.setCinema(rig.mode === 'showroom' ? 0 : s[S.speedKmh] / 3.6, performance.now() * 0.001);
     hud.update(s, dt, settings.tc, settings.abs);
     if (document.body.classList.contains('inmenu')) audio.silence();
     else audio.update(s, dt, physics);

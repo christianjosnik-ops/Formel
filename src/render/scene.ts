@@ -23,15 +23,17 @@ export interface SceneBundle {
   setShadow: (size: number, half: number) => void;
   /** Wetter/Tageszeit: Himmel, Sonne, Umgebungslicht, Belichtung und Nebel. */
   setWeather: (w: Weather, fogColor: number, fogNear: number, fogFar: number) => void;
+  /** Kino-Effekte je Bild: Geschwindigkeit [m/s] (Bewegungsunschärfe) und Zeit. */
+  setCinema: (speed: number, time: number) => void;
 }
 
 export type Weather = 'sunny' | 'overcast' | 'evening';
 
 /** Lichtstimmungen (Himmelstextur aus tools/make_sky.py mit gleicher Sonnenrichtung). */
-const WEATHER: Record<Weather, { sky: string; dir: [number, number, number]; sun: number; sunInt: number; hemiSky: number; hemiGround: number; hemiInt: number; exposure: number; env: number; fog: number | null; fogK: number; bloom?: number }> = {
-  sunny: { sky: 'sky.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xfff1dc, sunInt: 2.6, hemiSky: 0xcfe4ff, hemiGround: 0x55504a, hemiInt: 0.55, exposure: 1.0, env: 1.0, fog: null, fogK: 1 },
-  overcast: { sky: 'sky_overcast.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xe8eef5, sunInt: 0.85, hemiSky: 0xd5dde8, hemiGround: 0x6d7077, hemiInt: 1.25, exposure: 1.05, env: 1.15, fog: 0xaeb6bf, fogK: 0.5 },
-  evening: { sky: 'sky_evening.jpg', dir: [-0.85, 0.26, 0.45], sun: 0xffa45c, sunInt: 3.1, hemiSky: 0x9fb4e0, hemiGround: 0x5a4a44, hemiInt: 0.38, exposure: 0.95, env: 0.8, fog: 0xd8a98a, fogK: 0.8 },
+const WEATHER: Record<Weather, { grade: [number, number, number, number]; sky: string; dir: [number, number, number]; sun: number; sunInt: number; hemiSky: number; hemiGround: number; hemiInt: number; exposure: number; env: number; fog: number | null; fogK: number; bloom?: number }> = {
+  sunny: { grade: [1.04, 1.1, 0.3, 0.45], sky: 'sky.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xfff1dc, sunInt: 2.6, hemiSky: 0xcfe4ff, hemiGround: 0x55504a, hemiInt: 0.55, exposure: 1.0, env: 1.0, fog: null, fogK: 1 },
+  overcast: { grade: [0.95, 1.06, 0.22, 0.1], sky: 'sky_overcast.jpg', dir: [-0.55, 0.78, 0.3], sun: 0xe8eef5, sunInt: 0.85, hemiSky: 0xd5dde8, hemiGround: 0x6d7077, hemiInt: 1.25, exposure: 1.05, env: 1.15, fog: 0xaeb6bf, fogK: 0.5 },
+  evening: { grade: [1.08, 1.13, 0.16, 0.95], sky: 'sky_evening.jpg', dir: [-0.85, 0.26, 0.45], sun: 0xffa45c, sunInt: 3.1, hemiSky: 0x9fb4e0, hemiGround: 0x5a4a44, hemiInt: 0.38, exposure: 0.95, env: 0.8, fog: 0xd8a98a, fogK: 0.8 },
 };
 
 const TILE = 8; // Meter pro Texturkachel
@@ -182,17 +184,62 @@ export function createScene(canvas: HTMLCanvasElement): SceneBundle {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 0.92);
   composer.addPass(bloom);
   const grade = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, uVig: { value: 0.28 }, uSat: { value: 1.06 }, uCon: { value: 1.07 } },
+    uniforms: {
+      tDiffuse: { value: null },
+      uVig: { value: 0.3 },
+      uSat: { value: 1.04 },
+      uCon: { value: 1.1 },
+      uTime: { value: 0 },
+      uBlur: { value: 0 },
+      uCA: { value: 0.0016 },
+      uGrain: { value: 0.022 },
+      uGreen: { value: 0.28 },
+      uSun: { value: new THREE.Vector2(0.5, 0.5) },
+      uSunI: { value: 0 },
+      uSunCol: { value: new THREE.Color(1.0, 0.82, 0.55) },
+      uAsp: { value: 1.7 },
+    },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig; uniform float uSat; uniform float uCon; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig, uSat, uCon, uTime, uBlur, uCA, uGrain, uGreen, uSunI, uAsp; uniform vec2 uSun; uniform vec3 uSunCol; varying vec2 vUv;
+float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+vec3 fetch(vec2 uv, vec2 ca){ return vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b); }
 void main(){
-  vec4 c = texture2D(tDiffuse, vUv);
-  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-  c.rgb = mix(vec3(l), c.rgb, uSat);
-  c.rgb = (c.rgb - 0.18) * uCon + 0.18;
-  vec2 d = vUv - 0.5; d.x *= 1.15;
-  c.rgb *= 1.0 - uVig * smoothstep(0.35, 0.95, length(d) * 1.35);
-  gl_FragColor = vec4(max(c.rgb, 0.0), c.a);
+  vec2 c0 = vUv - 0.5;
+  vec2 ca = c0 * uCA * (0.4 + 2.0 * length(c0));
+  vec3 col;
+  if (uBlur > 0.01) {
+    // Radialer Bewegungsunschärfe-Zug zur Bildmitte, am Rand stärker (Geschwindigkeit)
+    float w = 0.0; col = vec3(0.0);
+    for (int i = 0; i < 7; i++) {
+      float t = float(i) / 6.0;
+      vec2 uv = 0.5 + c0 * (1.0 - uBlur * 0.07 * t);
+      float k = 1.0 - 0.6 * t;
+      col += fetch(uv, ca) * k; w += k;
+    }
+    col /= w;
+  } else col = fetch(vUv, ca);
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  // Sonnenglanz (Streulicht im Objektiv)
+  if (uSunI > 0.001) {
+    vec2 dd = (vUv - uSun) * vec2(uAsp, 1.0);
+    float d = length(dd);
+    col += uSunCol * uSunI * (0.30 * exp(-d * 5.0) + 0.45 * exp(-d * 17.0) + 0.5 * exp(-d * 60.0));
+    // schwache Geister gegenüber der Bildmitte
+    vec2 gp = 0.5 - (uSun - 0.5) * 0.55;
+    col += vec3(0.5, 0.7, 1.0) * uSunI * 0.05 * smoothstep(0.07, 0.0, length((vUv - gp) * vec2(uAsp, 1.0)));
+  }
+  // Farbkorrektur: Grün entsättigen und Richtung Oliv, Schatten kühl, Lichter warm
+  float g = clamp((col.g - max(col.r, col.b)) * 5.0, 0.0, 1.0);
+  col = mix(col, vec3(l), g * uGreen * 0.55);
+  col.r += g * uGreen * 0.03 * l;
+  col = mix(vec3(l), col, uSat);
+  col *= mix(vec3(0.95, 1.0, 1.06), vec3(1.05, 1.0, 0.94), smoothstep(0.05, 0.8, l));
+  col = (col - 0.18) * uCon + 0.18;
+  vec2 d = c0; d.x *= 1.15;
+  col *= 1.0 - uVig * smoothstep(0.35, 0.95, length(d) * 1.35);
+  // Filmkorn, in Schatten stärker
+  col += (hash(vUv * 1400.0 + uTime) - 0.5) * uGrain * (1.2 - clamp(l * 2.0, 0.0, 1.0));
+  gl_FragColor = vec4(max(col, 0.0), 1.0);
 }`,
   });
   composer.addPass(grade);
@@ -200,6 +247,10 @@ void main(){
   let post = true;
   const sunDir = new THREE.Vector3(-0.55, 0.78, 0.3).normalize();
   let curWeather: Weather = 'sunny';
+  let glareK = 0.45;
+  const sunWorld = new THREE.Vector3();
+  const sunNdc = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
   const resize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -252,6 +303,11 @@ void main(){
         if (curWeather === w) applySky(t);
       });
       sunDir.set(...p.dir).normalize();
+      grade.uniforms.uSat.value = p.grade[0];
+      grade.uniforms.uCon.value = p.grade[1];
+      grade.uniforms.uGreen.value = p.grade[2];
+      glareK = p.grade[3];
+      grade.uniforms.uSunCol.value.setHex(p.sun);
       sun.color.setHex(p.sun);
       sun.intensity = p.sunInt;
       hemi.color.setHex(p.hemiSky);
@@ -263,6 +319,21 @@ void main(){
       fog.color.setHex(p.fog ?? fogColor);
       fog.near = fogNear * (p.fogK < 1 ? 0.5 : 1);
       fog.far = fogFar * p.fogK;
+    },
+    setCinema: (speed: number, time: number) => {
+      const u = grade.uniforms;
+      u.uTime.value = time % 100;
+      u.uBlur.value = Math.max(0, Math.min(1, (speed - 35) / 60));
+      u.uAsp.value = camera.aspect;
+      // Sonne auf dem Bildschirm: nur wenn sie vor der Kamera steht
+      camera.getWorldDirection(camDir);
+      const facing = camDir.dot(sunDir);
+      if (facing > 0.1) {
+        sunWorld.copy(camera.position).addScaledVector(sunDir, 3000);
+        sunNdc.copy(sunWorld).project(camera);
+        u.uSun.value.set(sunNdc.x * 0.5 + 0.5, sunNdc.y * 0.5 + 0.5);
+        u.uSunI.value = glareK * Math.min(1, (facing - 0.1) * 2.5);
+      } else u.uSunI.value = 0;
     },
     updateEnvironment: (cx: number, cz: number) => {
       sun.position.set(cx + sunDir.x * 70, sunDir.y * 70, cz + sunDir.z * 70);

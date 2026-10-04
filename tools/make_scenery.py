@@ -97,43 +97,124 @@ def draw_ellipse(arr, cx, cy, rx, ry, ang, color, alpha=1.0):
     sub[m, 3] = alpha
 
 
+def draw_leaf(arr, cx, cy, length, width, ang, color, vein=0.16, edge=1.18, serrate=0.0):
+    """Echtes Blatt: spitz zulaufende Form, Mittelrippe, Seitenadern, hellerer Rand, leicht gezähnt."""
+    h, w, _ = arr.shape
+    R = int(length + width + 3)
+    x0, x1 = int(max(0, cx - R)), int(min(w, cx + R))
+    y0, y1 = int(max(0, cy - R)), int(min(h, cy + R))
+    if x1 <= x0 or y1 <= y0:
+        return
+    ys, xs = np.mgrid[y0:y1, x0:x1]
+    dx, dy = xs - cx, ys - cy
+    ca, sa = math.cos(ang), math.sin(ang)
+    u = (dx * ca + dy * sa) / length + 0.5            # 0..1 entlang des Blatts (Stiel bei 0)
+    v = (-dx * sa + dy * ca) / (width * 0.5)          # -1..1 quer
+    prof = np.where((u > 0) & (u < 1), np.sin(np.clip(u, 0, 1) ** 0.75 * math.pi) ** 0.9 * (1 - 0.25 * u), 0)
+    if serrate:
+        prof = prof * (1 + serrate * np.sin(u * 60))
+    m = np.abs(v) < prof
+    if not m.any():
+        return
+    sub = arr[y0:y1, x0:x1]
+    col = np.array(color, np.float32)
+    edge_k = np.clip(np.abs(v) / np.maximum(prof, 1e-3), 0, 1)
+    k = 0.92 + (edge - 0.92) * edge_k ** 2 * 0.9
+    # Seitenadern (schräg zur Rippe) und Mittelrippe
+    veins = np.abs(np.sin((u * 13.0 - np.abs(v) * 1.7) * math.pi)) ** 14
+    rib = np.exp(-(v / 0.07) ** 2)
+    shade = k * (1 - vein * 0.55 * veins * (np.abs(v) < prof * 0.92)) + rib * 0.22
+    px = np.clip(col[None, None, :] * shade[..., None], 0, 1)
+    sub[m, :3] = px[m]
+    sub[m, 3] = 1.0
+
+
 def foliage_broad():
-    w = h = 512
+    """Laubblatt-Cluster 1024x1024: hunderte echte Blätter, innen dunkel (Selbstverschattung), außen im Licht."""
+    w = h = 1024
     arr = np.zeros((h, w, 4), np.float32)
     r = random.Random(11)
-    greens = [(0.20, 0.36, 0.12), (0.26, 0.46, 0.15), (0.17, 0.30, 0.10), (0.34, 0.54, 0.18), (0.22, 0.40, 0.13), (0.42, 0.55, 0.16)]
-    lobes = [0.55 + r.random() * 0.4 for _ in range(8)]
-    for _ in range(1500):
+    greens = [(0.15, 0.30, 0.08), (0.21, 0.40, 0.10), (0.12, 0.26, 0.07), (0.30, 0.48, 0.12), (0.18, 0.35, 0.09), (0.38, 0.50, 0.12), (0.26, 0.38, 0.09)]
+    lobes = [0.5 + r.random() * 0.5 for _ in range(7)]
+    leaves = []
+    for _ in range(1900):
         ang = r.random() * math.tau
         lob = lobes[int(ang / math.tau * len(lobes)) % len(lobes)]
-        rad = math.sqrt(r.random()) * 232 * lob
-        cx, cy = w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.92
+        rad = (r.random() ** 0.72) * 460 * lob
+        leaves.append((rad, ang))
+    leaves.sort(key=lambda t: t[0])          # innen zuerst: äußere Blätter überdecken die inneren
+    for rad, ang in leaves:
+        cx, cy = w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.94
         c = greens[r.randrange(len(greens))]
-        k = 0.8 + 0.4 * r.random()
-        draw_ellipse(arr, cx, cy, 15 + r.random() * 16, 7 + r.random() * 7, r.random() * math.tau, (c[0] * k, c[1] * k, c[2] * k))
+        depth = 0.45 + 0.7 * (rad / 470) ** 0.8          # innen dunkler
+        k = depth * (0.85 + 0.3 * r.random())
+        # Blätter zeigen vom Zentrum weg, mit Streuung
+        la = ang + r.uniform(-1.0, 1.0)
+        L = 46 + r.random() * 34
+        draw_leaf(arr, cx, cy, L, L * r.uniform(0.42, 0.58), la, (c[0] * k, c[1] * k, c[2] * k), serrate=0.025)
+    # vereinzelt gelbliche Blätter (Sonnenlicht, Herbstansatz)
+    for _ in range(26):
+        ang = r.random() * math.tau
+        rad = 200 + r.random() * 200
+        draw_leaf(arr, w / 2 + math.cos(ang) * rad, h / 2 + math.sin(ang) * rad * 0.94, 60, 32, ang + r.uniform(-1, 1), (0.52, 0.52, 0.12))
     return arr
 
 
+def draw_line(arr, x0, y0, x1, y1, rad, color, alpha=1.0):
+    h, w, _ = arr.shape
+    n = int(max(abs(x1 - x0), abs(y1 - y0)) * 1.5) + 2
+    col = np.array(color, np.float32)
+    for i in range(n):
+        t = i / (n - 1)
+        x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        xi0, xi1 = int(max(0, x - rad - 1)), int(min(w, x + rad + 2))
+        yi0, yi1 = int(max(0, y - rad - 1)), int(min(h, y + rad + 2))
+        if xi1 <= xi0 or yi1 <= yi0:
+            continue
+        ys, xs = np.mgrid[yi0:yi1, xi0:xi1]
+        m = (xs - x) ** 2 + (ys - y) ** 2 <= rad * rad
+        sub = arr[yi0:yi1, xi0:xi1]
+        sub[m, :3] = col
+        sub[m, 3] = alpha
+
+
 def foliage_needle():
-    w = h = 512
+    """Nadelzweig 1024x1024: Zweigachse mit Seitenzweigen und tausenden feinen Nadeln, innen dunkler."""
+    w = h = 1024
     arr = np.zeros((h, w, 4), np.float32)
     r = random.Random(13)
-    greens = [(0.07, 0.20, 0.10), (0.10, 0.27, 0.14), (0.06, 0.17, 0.09), (0.14, 0.32, 0.17)]
-    # Zweig als Fächer: Mittelachse horizontal, Nadeln seitlich
-    for _ in range(2000):
-        t = r.random()
-        x = 20 + t * 470
-        spread = (1 - t * 0.55) * 120
-        y = h / 2 + (r.random() - 0.5) * 2 * spread * (0.4 + 0.6 * r.random())
-        ang = (-0.9 if y < h / 2 else 0.9) * (0.5 + 0.5 * r.random()) + (r.random() - 0.5) * 0.4
-        c = greens[r.randrange(4)]
-        k = 0.85 + 0.35 * r.random()
-        draw_ellipse(arr, x, y, 22 + r.random() * 16, 2.3 + r.random() * 1.6, ang, (c[0] * k, c[1] * k, c[2] * k))
-    # Zweigachse
-    for xx in range(15, 495):
-        yy = int(h / 2 + math.sin(xx / 70) * 4)
-        arr[yy - 2:yy + 3, xx, :3] = (0.22, 0.15, 0.08)
-        arr[yy - 2:yy + 3, xx, 3] = 1
+    greens = [(0.09, 0.27, 0.12), (0.13, 0.36, 0.17), (0.08, 0.23, 0.10), (0.19, 0.44, 0.21), (0.14, 0.32, 0.14)]
+    cy = h / 2
+
+    def axis_y(x):
+        return cy + math.sin(x / 140.0) * 9
+
+    def twig(xs, ys, ang, length, depth):
+        x1, y1 = xs + math.cos(ang) * length, ys + math.sin(ang) * length
+        # Unterlage: dichte dunkle Nadelmasse, damit der Zweig auch in der Ferne (Mipmaps) deckend bleibt
+        draw_ellipse(arr, (xs + x1) / 2, (ys + y1) / 2, length * 0.52, (34 if depth == 0 else 27), ang, (0.05, 0.15, 0.07))
+        # Nadeln entlang der Achse: dicht, schräg nach vorn, beidseitig
+        n = int(length * 1.7)
+        for i in range(n):
+            t = i / n
+            px, py = xs + (x1 - xs) * t, ys + (y1 - ys) * t
+            side = 1 if r.random() < 0.5 else -1
+            na = ang + side * (0.75 + r.random() * 0.55)
+            nl = (20 + r.random() * 20) * (1 - 0.35 * t) * (1.0 if depth == 0 else 0.8)
+            c = greens[r.randrange(len(greens))]
+            k = (0.55 + 0.6 * (0.3 + 0.7 * t)) * (0.85 + 0.3 * r.random()) * (0.9 if depth else 1.0)
+            draw_line(arr, px, py, px + math.cos(na) * nl, py + math.sin(na) * nl, 1.6, (c[0] * k, c[1] * k, c[2] * k))
+        draw_line(arr, xs, ys, x1, y1, 1.8, (0.20, 0.13, 0.07))
+        return x1, y1
+
+    # Hauptzweig mit Seitenzweigen links/rechts
+    xe, ye = twig(30, cy, 0.0, 940, 0)
+    for i in range(14):
+        t = 0.08 + i * 0.062
+        px, py = 30 + 940 * t, axis_y(30 + 940 * t) * 0 + cy
+        for side in (-1, 1):
+            a = side * (0.7 + r.random() * 0.25)
+            twig(px, py, a, 200 * (1 - t * 0.55) * (0.8 + 0.4 * r.random()), 1)
     return arr
 
 
@@ -640,7 +721,7 @@ def conifer(name, seed, height=18.0, trunk_r=0.28, width=3.2, lod=False):
             # zwei Karten pro Zweig: leicht gegeneinander verdreht (Fächer von oben und von der Seite)
             for tw in (0.0, 1.0):
                 nrm = (tangent * (1 - tw) + Vector((0, 0, 1)) * (0.9 * tw + 0.15)).normalized()
-                add_card(b, center, (length * (1.3 if lod else 1), length * (1.0 if lod else 0.75)), nrm, axis, M_NEEDLE, (shade, shade, shade))
+                add_card(b, center, (length * (1.3 if lod else 1), length * (1.5 if lod else 1.45)), nrm, axis, M_NEEDLE, (shade, shade, shade))
     ob = b.finish()
     finish_smooth_foliage(ob, cc, 2.2)
     return ob
